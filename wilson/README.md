@@ -1,9 +1,11 @@
 # 🐔 Wilson: A Galinha Voadora
 
 Um Flappy Bird caseiro onde o herói é a Wilson, uma galinha que decidiu que
-gravidade é opinião. Tudo em **um único arquivo HTML** — sem build, sem
-dependências, sem imagens externas: cenário, galinha e sons são desenhados e
-sintetizados em tempo de execução (Canvas 2D + Web Audio).
+gravidade é opinião. Tudo em **um único arquivo HTML** — sem build e sem
+imagens: cenário, galinha e sons são desenhados e sintetizados em tempo de
+execução (Canvas 2D + Web Audio). A única coisa que vem da rede é a fonte
+Baloo 2 do Google Fonts, e o jogo funciona normalmente sem ela (cai para uma
+fonte do sistema).
 
 ## Como jogar
 
@@ -13,13 +15,36 @@ Abra `wilson/index.html` no navegador (duplo clique já resolve) ou sirva a past
 npx http-server . -p 8080     # depois: http://localhost:8080/wilson/
 ```
 
+### No celular
+
+O jogo foi feito para funcionar bem no telefone:
+
+- **Tela cheia de verdade**: o campo de jogo assume o formato da tela (entre
+  3:4 e 1:2), sem tarjas em cima e embaixo, e respeita o notch via
+  `env(safe-area-inset-*)`.
+- **Três botões na tela** (pausa, som e tela cheia), porque no celular não
+  existe teclado — com alvo de toque maior que o desenho.
+- **Sem zoom, sem "puxar para atualizar" e sem seleção de texto** ao tocar.
+- **Vibração** curta ao marcar ponto, pegar ovo e bater.
+- Pausa sozinho quando você troca de aba ou atende uma ligação.
+- Dá para **adicionar à tela de início** (iOS e Android) e abrir como app,
+  sem a barra do navegador.
+
+Para jogar no celular a partir do computador, sirva a pasta na rede local e
+acesse pelo IP da máquina:
+
+```bash
+npx http-server . -p 8080 -a 0.0.0.0    # http://SEU-IP:8080/wilson/
+```
+
 ### Controles
 
 | Ação | Tecla / gesto |
 |---|---|
 | Bater as asas | `Espaço`, `↑`, `W`, `Enter`, clique ou toque |
-| Pausar | `P` ou `Esc` |
-| Ligar/desligar som | `M` ou o botão no canto superior direito |
+| Pausar | `P`, `Esc` ou o botão ⏸ |
+| Ligar/desligar som | `M` ou o botão 🔊 |
+| Tela cheia | botão ⛶ (some quando o navegador não permite, como no iOS) |
 | Recomeçar | toque/clique na tela de fim de jogo |
 
 ## O que tem no jogo
@@ -38,8 +63,10 @@ npx http-server . -p 8080     # depois: http://localhost:8080/wilson/
   (15), Ouro (30) e Diamante (50).
 - **Som procedural** (Web Audio): batida de asa, ponto, ovo, colisão e o
   co-co-ri-có final.
-- **Responsivo**: o canvas é 480×720 lógico e escala para caber na tela, com
-  suporte a devicePixelRatio para não ficar borrado.
+- **Responsivo**: 480 px de largura lógica e altura que segue o formato da
+  tela, com `devicePixelRatio` para não ficar borrado. A passagem entre os
+  obstáculos é proporcional à altura, então a dificuldade é a mesma no
+  celular e no monitor.
 
 ## Ajustes rápidos
 

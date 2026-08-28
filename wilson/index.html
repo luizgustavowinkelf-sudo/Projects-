@@ -3,20 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Wilson: A Galinha Voadora</title>
+<meta name="theme-color" content="#1d2b1f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wilson">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Flappy Bird com uma galinha chamada Wilson.">
+<title>Voa, Wilson!</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap">
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%;
     background: #1d2b1f;
-    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    font-family: "Baloo 2", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
     overflow: hidden;
-    touch-action: manipulation;
+    overscroll-behavior: none;            /* nada de "puxar para atualizar" */
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
   }
   #wrap {
     position: fixed; inset: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     display: flex; align-items: center; justify-content: center;
     background:
       radial-gradient(120% 90% at 50% 0%, #3b5a3c 0%, #1d2b1f 70%);
@@ -26,7 +38,14 @@
     border-radius: 14px;
     box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 3px rgba(255,255,255,.06);
     cursor: pointer;
+    touch-action: none;                   /* sem zoom/scroll ao tocar no jogo */
     image-rendering: auto;
+  }
+  /* No celular o jogo ocupa a tela toda: sem cantos, sem sombra, sem rodapé */
+  @media (pointer: coarse) {
+    #wrap { padding: 0; }
+    canvas { border-radius: 0; box-shadow: none; }
+    #hint { display: none; }
   }
   #hint {
     position: fixed; left: 0; right: 0; bottom: 8px;
@@ -43,16 +62,33 @@
 "use strict";
 
 // ---------------------------------------------------------------- setup
-const W = 480, H = 720;            // resolução lógica
+const W = 480;                     // largura lógica fixa
+const FONT = '"Baloo 2", "Trebuchet MS", "Segoe UI", sans-serif';
 const GROUND_H = 104;
-const FLOOR_Y = H - GROUND_H;
+const REF_H = 720;                 // altura de referência para a dificuldade
+let H = REF_H;                     // altura lógica: segue o formato da tela
+let FLOOR_Y = H - GROUND_H;
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
 function resize() {
-  const pad = 16;
-  const availW = window.innerWidth - pad, availH = window.innerHeight - pad - 18;
+  // visualViewport acompanha as barras do Safari/Chrome no celular
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth;
+  const vh = vv ? vv.height : window.innerHeight;
+  const pad = isTouch ? 0 : 16;
+  const footer = isTouch ? 0 : 18;
+  const availW = vw - pad, availH = vh - pad - footer;
+
+  // o campo de jogo assume o formato da tela (entre 3:4 e 1:2), então o
+  // celular joga em tela cheia em vez de ficar com tarjas em cima e embaixo
+  const aspect = Math.max(1.4, Math.min(2.0, availH / availW));
+  H = Math.round(W * aspect);
+  FLOOR_Y = H - GROUND_H;
+
   const scale = Math.min(availW / W, availH / H);
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.round(W * dpr);
@@ -62,7 +98,10 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
 resize();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
 
 // ---------------------------------------------------------------- áudio
 const Sfx = {
@@ -120,7 +159,7 @@ const BASE_GAP = 200, MIN_GAP = 146;
 const GRAVITY = 1750, FLAP_V = -505, MAX_FALL = 880;
 
 function speed()  { return Math.min(MAX_SPEED, BASE_SPEED + score * 3.2); }
-function gapSize(){ return Math.max(MIN_GAP, BASE_GAP - score * 2.1); }
+function gapSize(){ return Math.max(MIN_GAP, BASE_GAP - score * 2.1) * (H / REF_H); }
 function spawnGap(){ return (PIPE_W + 200) / speed(); }   // segundos entre canos
 
 function seedClouds() {
@@ -181,16 +220,54 @@ window.addEventListener("keydown", (e) => {
     Sfx.on = !Sfx.on;
   }
 });
+// Botões desenhados no canvas — no celular não existe teclado para P / M.
+const FS_OK = !!document.documentElement.requestFullscreen;
+const BTN_W = 46, BTN_H = 38, BTN_GAP = 8, BTN_Y = 12;
+const buttons = [
+  { id: "pause", act: () => { if (state === State.PLAY) state = State.PAUSE; else if (state === State.PAUSE) state = State.PLAY; } },
+  { id: "sound", act: () => { Sfx.on = !Sfx.on; Sfx.boot(); } },
+];
+if (FS_OK) buttons.push({ id: "full", act: toggleFullscreen });
+buttons.forEach((b, i) => {
+  b.x = W - 12 - (buttons.length - i) * BTN_W - (buttons.length - 1 - i) * BTN_GAP;
+  b.y = BTN_Y; b.w = BTN_W; b.h = BTN_H;
+});
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  const req = document.documentElement.requestFullscreen({ navigationUI: "hide" });
+  // se o navegador (ou o iframe onde o jogo está) não permitir, some com o botão
+  if (req && req.catch) req.catch(() => {
+    const b = buttons.find(x => x.id === "full");
+    if (b) b.hidden = true;
+  });
+}
+
+function canvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: (e.clientX - rect.left) / rect.width * W, y: (e.clientY - rect.top) / rect.height * H };
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   e.preventDefault();
-  // botão de som no canto
-  const rect = canvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) / rect.width * W;
-  const my = (e.clientY - rect.top) / rect.height * H;
-  if (mx > W - 52 && my < 46) { Sfx.on = !Sfx.on; Sfx.boot(); return; }
+  const { x, y } = canvasPoint(e);
+  const pad = 10;   // alvo de toque maior que o desenho
+  for (const b of buttons) {
+    if (b.hidden) continue;
+    if (x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad) {
+      Sfx.boot(); b.act(); buzz(8); return;
+    }
+  }
   press();
-});
+}, { passive: false });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("blur", () => { if (state === State.PLAY) state = State.PAUSE; });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && state === State.PLAY) state = State.PAUSE;
+});
+
+// vibração curta (Android; iOS ignora silenciosamente)
+function buzz(pattern) { if (navigator.vibrate) try { navigator.vibrate(pattern); } catch (e) {} }
 
 // ---------------------------------------------------------------- lógica
 function update(dt) {
@@ -259,7 +336,7 @@ function update(dt) {
     p.x -= sp * dt;
     if (p.egg) p.egg.t += dt;
     if (!p.passed && p.x + PIPE_W < wilson.x - wilson.r) {
-      p.passed = true; score++; Sfx.score();
+      p.passed = true; score++; Sfx.score(); buzz(10);
     }
   }
   pipes = pipes.filter(p => p.x > -PIPE_W - 20);
@@ -269,7 +346,7 @@ function update(dt) {
     if (p.egg && !p.egg.taken) {
       const ex = p.x + PIPE_W / 2, ey = p.gapY;
       if (Math.hypot(wilson.x - ex, wilson.y - ey) < wilson.r + 16) {
-        p.egg.taken = true; score += 2; Sfx.egg();
+        p.egg.taken = true; score += 2; Sfx.egg(); buzz([12, 30, 12]);
         for (let i = 0; i < 14; i++) {
           const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 140;
           sparks.push({ x: ex, y: ey, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: .5 + Math.random() * .4 });
@@ -297,7 +374,7 @@ function die() {
   if (state === State.DEAD) return;
   state = State.DEAD; wilson.alive = false; deadTimer = 0;
   wilson.vy = -180; shake = 1; flashAlpha = .65;
-  Sfx.hit(); setTimeout(() => Sfx.cluck(), 110);
+  Sfx.hit(); setTimeout(() => Sfx.cluck(), 110); buzz(90);
   for (let i = 0; i < 18; i++) {
     const a = Math.random() * Math.PI * 2, v = 70 + Math.random() * 190;
     puffFeather(wilson.x, wilson.y, Math.cos(a) * v, Math.sin(a) * v - 60);
@@ -617,7 +694,7 @@ function drawFeathers() {
 
 // ---------------------------------------------------------------- HUD
 function text(str, x, y, size, color, align = "center", weight = "bold", outline = 4) {
-  ctx.font = weight + " " + size + 'px "Trebuchet MS", "Segoe UI", sans-serif';
+  ctx.font = weight + " " + size + "px " + FONT;
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
   if (outline) {
@@ -657,26 +734,54 @@ function medalFor(s) {
   return null;
 }
 
-function drawSoundBtn() {
-  ctx.save();
-  ctx.globalAlpha = .8;
-  ctx.fillStyle = "rgba(0,0,0,.22)";
-  roundRect(W - 46, 12, 34, 28, 8); ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.moveTo(W - 38, 22); ctx.lineTo(W - 34, 22); ctx.lineTo(W - 29, 17);
-  ctx.lineTo(W - 29, 35); ctx.lineTo(W - 34, 30); ctx.lineTo(W - 38, 30);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.lineCap = "round";
-  if (Sfx.on) {
-    ctx.beginPath(); ctx.arc(W - 27, 26, 5, -0.9, 0.9); ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.moveTo(W - 26, 21); ctx.lineTo(W - 18, 31);
-    ctx.moveTo(W - 18, 21); ctx.lineTo(W - 26, 31);
-    ctx.stroke();
+function drawButtons() {
+  for (const b of buttons) {
+    if (b.hidden) continue;
+    ctx.save();
+    ctx.globalAlpha = .78;
+    ctx.fillStyle = "rgba(28,20,10,.30)";
+    roundRect(b.x, b.y, b.w, b.h, 10); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1.5; ctx.stroke();
+
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    ctx.fillStyle = "#fff8e8"; ctx.strokeStyle = "#fff8e8";
+    ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+    if (b.id === "pause") {
+      if (state === State.PAUSE) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 5, cy - 8); ctx.lineTo(cx + 8, cy); ctx.lineTo(cx - 5, cy + 8);
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillRect(cx - 7, cy - 8, 5, 16);
+        ctx.fillRect(cx + 2, cy - 8, 5, 16);
+      }
+    } else if (b.id === "sound") {
+      ctx.beginPath();
+      ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx, cy - 9);
+      ctx.lineTo(cx, cy + 9); ctx.lineTo(cx - 5, cy + 4); ctx.lineTo(cx - 9, cy + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      if (Sfx.on) {
+        ctx.arc(cx + 2, cy, 6, -0.9, 0.9);
+      } else {
+        ctx.moveTo(cx + 3, cy - 5); ctx.lineTo(cx + 11, cy + 5);
+        ctx.moveTo(cx + 11, cy - 5); ctx.lineTo(cx + 3, cy + 5);
+      }
+      ctx.stroke();
+    } else {
+      const r = 8, k = 4;
+      const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+      ctx.beginPath();
+      for (const [sx, sy] of corners) {
+        ctx.moveTo(cx + sx * r, cy + sy * r - sy * k);
+        ctx.lineTo(cx + sx * r, cy + sy * r);
+        ctx.lineTo(cx + sx * r - sx * k, cy + sy * r);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function drawHUD() {
@@ -685,27 +790,30 @@ function drawHUD() {
   }
 
   if (state === State.READY) {
-    text("WILSON", W / 2, 150, 62, "#fffdf3", "center", "bold", 8);
-    text("a galinha voadora", W / 2, 186, 22, "#ffe9b8", "center", "bold", 5);
+    const ty = H * 0.21;
+    text("WILSON", W / 2, ty, 62, "#fffdf3", "center", "bold", 8);
+    text("a galinha voadora", W / 2, ty + 36, 22, "#ffe9b8", "center", "bold", 5);
 
     const bob = Math.sin(performance.now() / 300) * 5;
-    panel(W / 2 - 140, 452 + bob, 280, 96, 18);
+    const py = Math.min(H * 0.63, FLOOR_Y - 130);
+    panel(W / 2 - 140, py + bob, 280, 96, 18);
     ctx.fillStyle = "#5a3d1e";
-    text("TOQUE / ESPAÇO", W / 2, 486 + bob, 24, "#5a3d1e", "center", "bold", 0);
-    text("para bater as asas", W / 2, 512 + bob, 18, "#8a6a44", "center", "normal", 0);
-    text("Recorde: " + best, W / 2, 536 + bob, 16, "#a8853f", "center", "bold", 0);
+    text(isTouch ? "TOQUE NA TELA" : "TOQUE / ESPAÇO", W / 2, py + 34 + bob, 24, "#5a3d1e", "center", "bold", 0);
+    text("para bater as asas", W / 2, py + 60 + bob, 18, "#8a6a44", "center", "normal", 0);
+    text("Recorde: " + best, W / 2, py + 84 + bob, 16, "#a8853f", "center", "bold", 0);
   }
 
   if (state === State.PAUSE) {
     ctx.fillStyle = "rgba(0,0,0,.38)";
     ctx.fillRect(0, 0, W, H);
     text("PAUSA", W / 2, H / 2, 48, "#fffdf3", "center", "bold", 7);
-    text("P ou toque para continuar", W / 2, H / 2 + 34, 18, "#ffe9b8", "center", "bold", 4);
+    text(isTouch ? "toque para continuar" : "P ou toque para continuar",
+         W / 2, H / 2 + 34, 18, "#ffe9b8", "center", "bold", 4);
   }
 
   if (state === State.DEAD) {
     const t = Math.min(1, deadTimer / 0.35);
-    const y0 = 178 + (1 - t) * 40;
+    const y0 = H * 0.247 + (1 - t) * 40;
     ctx.save();
     ctx.globalAlpha = t;
     text("CO-CO-RI-CÓ!", W / 2, y0 - 26, 34, "#fff0c2", "center", "bold", 7);
@@ -737,7 +845,7 @@ function drawHUD() {
     ctx.restore();
   }
 
-  drawSoundBtn();
+  drawButtons();
 }
 
 // ---------------------------------------------------------------- loop
