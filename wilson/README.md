@@ -45,7 +45,31 @@ npx http-server . -p 8080 -a 0.0.0.0    # http://SEU-IP:8080/wilson/
 | Pausar | `P`, `Esc` ou o botão ⏸ |
 | Ligar/desligar som | `M` ou o botão 🔊 |
 | Tela cheia | botão ⛶ (some quando o navegador não permite, como no iOS) |
+| Ver o placar | botão 🏆 (canto superior esquerdo) |
 | Recomeçar | toque/clique na tela de fim de jogo |
+
+## Placar
+
+Terminou uma partida boa? A tela do placar abre sozinha para você digitar o
+nome e entrar no quadro das dez melhores. O botão 🏆 abre o placar a qualquer
+momento.
+
+Onde o placar fica guardado depende de onde o jogo está rodando:
+
+- **Publicado como Artifact do Claude** — a página guarda o placar dentro de
+  si mesma: ao entrar no quadro, ela se republica com a lista nova (a
+  capacidade `artifact` do runtime), e todo mundo que abrir o link vê o mesmo
+  placar. Quem tiver o link só para leitura consegue ver o quadro, mas a
+  pontuação dessa pessoa fica guardada no aparelho dela — o navegador não
+  pode escrever na página em nome dela.
+- **Arquivo local, GitHub Pages ou qualquer outro servidor estático** — não
+  existe onde escrever, então o placar é o deste aparelho (`localStorage`).
+  O jogo avisa isso na hora de salvar.
+
+As linhas que ainda não entraram no placar compartilhado aparecem marcadas
+com **só neste aparelho**. Se duas pessoas entrarem no quadro ao mesmo tempo,
+uma das publicações perde a corrida; nesse caso o jogo tenta de novo uma
+única vez depois que a página recarrega na versão vencedora.
 
 ## O que tem no jogo
 
@@ -61,6 +85,8 @@ npx http-server . -p 8080 -a 0.0.0.0    # http://SEU-IP:8080/wilson/
   flash e tremida de tela.
 - **Recorde salvo** em `localStorage` e medalhas de ovo: Bronze (5), Prata
   (15), Ouro (30) e Diamante (50).
+- **Placar das dez melhores**, compartilhado quando a página pode se
+  republicar e local quando não pode (ver acima).
 - **Som procedural** (Web Audio): batida de asa, ponto, ovo, colisão e o
   co-co-ri-có final.
 - **Responsivo**: 480 px de largura lógica e altura que segue o formato da

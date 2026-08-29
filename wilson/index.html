@@ -10,12 +10,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="Flappy Bird com uma galinha chamada Wilson.">
 <title>Voa, Wilson!</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap">
-<style>
+<style id="css">
+  @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap");
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body {
     margin: 0; height: 100%;
     background: #1d2b1f;
@@ -48,18 +47,92 @@
     #hint { display: none; }
   }
   #hint {
+    margin: 0;
     position: fixed; left: 0; right: 0; bottom: 8px;
     text-align: center; color: rgba(255,255,255,.45);
     font-size: 12px; letter-spacing: .04em; pointer-events: none;
   }
+
+  /* ---------------------------------------------------- placar */
+  #ui[hidden] { display: none; }
+  #ui {
+    position: fixed; inset: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background: rgba(26,17,8,.62);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  #cartao {
+    width: min(420px, 100%); max-height: 88vh; overflow-y: auto;
+    background: #fffaee; color: #5a3d1e;
+    border: 3px solid #8a5a2c; border-radius: 22px;
+    box-shadow: 0 22px 55px rgba(0,0,0,.5);
+    padding: 20px 18px 16px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #cartao h2 {
+    margin: 0; font-size: 28px; font-weight: 800; line-height: 1.1;
+    text-wrap: balance; letter-spacing: .01em;
+  }
+  #cartao h2 span { display: block; font-size: 14px; font-weight: 600; color: #a8853f; }
+  #lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #lista li {
+    display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
+    background: #f4e8d1; border-radius: 13px; padding: 9px 12px;
+  }
+  #lista li.eu { background: #ffe6ac; box-shadow: inset 0 0 0 2px #e0a92c; }
+  #lista .pos { font-weight: 800; color: #a8853f; text-align: right; font-variant-numeric: tabular-nums; }
+  #lista .nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #lista .pts { font-weight: 800; font-size: 19px; font-variant-numeric: tabular-nums; }
+  #lista .so-aqui { font-size: 11px; color: #a8853f; font-weight: 600; }
+  #vazio, #aviso { margin: 0; font-size: 14px; color: #8a6a44; line-height: 1.45; }
+  #aviso:empty { display: none; }
+  #formNome { display: flex; flex-direction: column; gap: 8px; }
+  #formNome label { font-size: 13px; font-weight: 700; color: #a8853f; letter-spacing: .05em; text-transform: uppercase; }
+  #nome {
+    font: 600 17px/1 inherit; font-family: inherit; color: #5a3d1e;
+    padding: 13px 14px; border-radius: 13px; border: 2px solid #dcc7a2; background: #fff; width: 100%;
+  }
+  #nome:focus-visible, #cartao button:focus-visible { outline: 3px solid #e0762a; outline-offset: 2px; }
+  #cartao button {
+    min-height: 48px; padding: 0 18px; border: none; border-radius: 13px;
+    font: 800 17px/1 inherit; font-family: inherit; cursor: pointer;
+  }
+  .primario { background: #e0762a; color: #fff8ee; }
+  .primario:active { background: #c9631f; }
+  .secundario { background: none; color: #8a6a44; text-decoration: underline; min-height: 40px !important; }
 </style>
 </head>
 <body>
-<div id="wrap"><canvas id="game" aria-label="Jogo Wilson, a galinha voadora"></canvas></div>
-<div id="hint">Espaço / clique / toque = bater as asas &nbsp;·&nbsp; P = pausa &nbsp;·&nbsp; M = som</div>
-<script>
+<div id="jogo"></div>
+<script id="dados" type="application/json">{"v":1,"entradas":[]}</script>
+<script id="app">
 (() => {
 "use strict";
+
+// ---------------------------------------------------------------- corpo
+// O corpo vive numa constante só: é o mesmo texto usado para republicar a
+// página quando alguém entra no placar (ver paginaHTML mais abaixo).
+const CORPO = `
+<div id="wrap"><canvas id="game" aria-label="Jogo Wilson, a galinha voadora"></canvas></div>
+<p id="hint">Espaço / clique / toque = bater as asas &nbsp;·&nbsp; P = pausa &nbsp;·&nbsp; M = som</p>
+<div id="ui" hidden>
+  <div id="cartao" role="dialog" aria-modal="true" aria-labelledby="uiTitulo">
+    <h2 id="uiTitulo">Placar do galinheiro<span id="uiSub">as dez melhores voadoras</span></h2>
+    <ol id="lista"></ol>
+    <p id="vazio">Ainda não tem ninguém no quadro. Seja a primeira galinha.</p>
+    <form id="formNome" hidden>
+      <label for="nome">Seu nome</label>
+      <input id="nome" maxlength="16" autocomplete="nickname" enterkeyhint="done"
+             spellcheck="false" placeholder="Wilson Jr.">
+      <button type="submit" class="primario" id="enviar">Entrar no placar</button>
+    </form>
+    <p id="aviso"></p>
+    <button id="fechar" class="secundario" type="button">Voltar ao jogo</button>
+  </div>
+</div>`;
+document.getElementById("jogo").innerHTML = CORPO;
 
 // ---------------------------------------------------------------- setup
 const W = 480;                     // largura lógica fixa
@@ -203,6 +276,7 @@ function puffFeather(x, y, vx, vy) {
 
 // ---------------------------------------------------------------- entrada
 function press() {
+  if (!uiEl.hidden) return;               // placar aberto na frente
   Sfx.boot();
   if (state === State.READY) { resetRun(); state = State.PLAY; flap(); }
   else if (state === State.PLAY) flap();
@@ -211,6 +285,7 @@ function press() {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (!uiEl.hidden) return;               // o teclado é do formulário do placar
   if (e.code === "Space" || e.code === "ArrowUp" || e.code === "Enter" || e.code === "KeyW") {
     e.preventDefault(); press();
   } else if (e.code === "KeyP" || e.code === "Escape") {
@@ -231,6 +306,11 @@ if (FS_OK) buttons.push({ id: "full", act: toggleFullscreen });
 buttons.forEach((b, i) => {
   b.x = W - 12 - (buttons.length - i) * BTN_W - (buttons.length - 1 - i) * BTN_GAP;
   b.y = BTN_Y; b.w = BTN_W; b.h = BTN_H;
+});
+buttons.push({
+  id: "placar", x: 12, y: BTN_Y, w: BTN_W, h: BTN_H,
+  so: () => state === State.READY || state === State.DEAD,
+  act: () => abrePlacar(state === State.DEAD ? score : NaN),
 });
 
 function toggleFullscreen() {
@@ -253,7 +333,7 @@ canvas.addEventListener("pointerdown", (e) => {
   const { x, y } = canvasPoint(e);
   const pad = 10;   // alvo de toque maior que o desenho
   for (const b of buttons) {
-    if (b.hidden) continue;
+    if (b.hidden || (b.so && !b.so())) continue;
     if (x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad) {
       Sfx.boot(); b.act(); buzz(8); return;
     }
@@ -383,7 +463,233 @@ function die() {
     best = score;
     try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
   }
+  if (entraNoPlacar(score)) {
+    const pontos = score;
+    setTimeout(() => { if (state === State.DEAD && uiEl.hidden) abrePlacar(pontos); }, 950);
+  }
 }
+
+
+// ---------------------------------------------------------------- placar
+// A página guarda o placar dentro dela mesma: quando alguém entra no quadro,
+// republicamos a página com a lista nova (capacidade "artifact"). Onde essa
+// capacidade não existe — arquivo local, GitHub Pages — o placar continua
+// funcionando, só que guardado neste aparelho.
+const MAX_PLACAR = 10;
+const K_LOCAL = "wilson.placar", K_NOME = "wilson.nome";
+const K_PEND = "wilson.pendente", K_ABRIR = "wilson.abrir";
+
+const $ = (id) => document.getElementById(id);
+const uiEl = $("ui"), listaEl = $("lista"), vazioEl = $("vazio");
+const formEl = $("formNome"), nomeEl = $("nome"), enviarEl = $("enviar");
+const avisoEl = $("aviso"), subEl = $("uiSub"), fecharEl = $("fechar");
+
+function guardado(chave, padrao) {
+  try { return JSON.parse(localStorage.getItem(chave)) ?? padrao; } catch (e) { return padrao; }
+}
+function guardar(chave, valor) {
+  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) {}
+}
+
+let placarPub = [];                       // veio publicado dentro da página
+try { placarPub = (JSON.parse($("dados").textContent).entradas || []).filter(valida); } catch (e) {}
+let placarLoc = guardado(K_LOCAL, []).filter(valida);
+let euId = null;                          // marca a linha de quem acabou de entrar
+let podePublicar = null;                  // null = ainda não sabemos
+
+function valida(e) {
+  return e && typeof e.n === "string" && Number.isFinite(e.p) && e.p >= 0;
+}
+function chave(e) { return e.n + "|" + e.p + "|" + (e.d || ""); }
+function hoje() { return new Date().toISOString().slice(0, 10); }
+
+function ordena(lista) {
+  return lista.slice().sort((a, b) => b.p - a.p || String(a.d).localeCompare(String(b.d)));
+}
+// placar exibido: o que está publicado + o que ainda só existe aqui
+function unido() {
+  const vistos = new Set(placarPub.map(chave));
+  const juntos = placarPub.map(e => ({ ...e, local: false }));
+  for (const e of placarLoc) if (!vistos.has(chave(e))) juntos.push({ ...e, local: true });
+  return ordena(juntos).slice(0, MAX_PLACAR);
+}
+function entraNoPlacar(pontos) {
+  if (pontos <= 0) return false;
+  const lista = unido();
+  return lista.length < MAX_PLACAR || pontos > lista[lista.length - 1].p;
+}
+
+function limpaNome(txt) {
+  return String(txt).replace(/\s+/g, " ").trim().slice(0, 16);
+}
+
+function desenhaLista() {
+  const lista = unido();
+  listaEl.replaceChildren();
+  vazioEl.hidden = lista.length > 0;
+  lista.forEach((e, i) => {
+    const li = document.createElement("li");
+    if (e.id && e.id === euId) li.className = "eu";
+    const pos = document.createElement("span");
+    pos.className = "pos"; pos.textContent = (i + 1) + ".";
+    const nome = document.createElement("span");
+    nome.className = "nome"; nome.textContent = e.n;
+    if (e.local) {
+      const tag = document.createElement("span");
+      tag.className = "so-aqui"; tag.textContent = " só neste aparelho";
+      nome.appendChild(tag);
+    }
+    const pts = document.createElement("span");
+    pts.className = "pts"; pts.textContent = e.p;
+    li.append(pos, nome, pts);
+    listaEl.appendChild(li);
+  });
+}
+
+function abrePlacar(pontos) {
+  const podeEntrar = Number.isFinite(pontos) && entraNoPlacar(pontos);
+  desenhaLista();
+  formEl.hidden = !podeEntrar;
+  avisoEl.textContent = "";
+  if (podeEntrar) {
+    formEl.dataset.pontos = pontos;
+    nomeEl.value = guardado(K_NOME, "");
+    enviarEl.disabled = false;
+    enviarEl.textContent = "Entrar no placar com " + pontos + (pontos === 1 ? " ponto" : " pontos");
+    fecharEl.textContent = "Agora não";
+  } else {
+    fecharEl.textContent = "Voltar ao jogo";
+  }
+  uiEl.hidden = false;
+  // no celular deixa o jogador tocar no campo: teclado subindo sozinho tampa o placar
+  if (podeEntrar && !isTouch) setTimeout(() => nomeEl.focus({ preventScroll: true }), 60);
+}
+function fechaPlacar() { uiEl.hidden = true; }
+fecharEl.addEventListener("click", fechaPlacar);
+uiEl.addEventListener("pointerdown", (e) => { if (e.target === uiEl) fechaPlacar(); });
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && !uiEl.hidden) { e.preventDefault(); fechaPlacar(); }
+}, true);
+
+// ---- publicação
+let artefato = null, pArtefato = null;
+const temClaude = !!(window.claude && typeof window.claude.use === "function");
+if (temClaude) {
+  pArtefato = window.claude.use("artifact").catch(() => null);
+  pArtefato.then((a) => {
+    artefato = a;
+    if (!a) { podePublicar = false; atualizaSub(); }
+    else tentaPendente();
+  });
+} else {
+  podePublicar = false;
+}
+
+function atualizaSub() {
+  subEl.textContent = podePublicar === false
+    ? "guardado só neste aparelho"
+    : "as dez melhores voadoras";
+}
+atualizaSub();
+
+// A página republicada precisa ser um documento completo. Ela é montada com
+// os mesmos pedaços desta aqui — CSS, corpo e este próprio script — trocando
+// apenas a lista de pontuações.
+function paginaHTML(lista) {
+  const css = $("css").textContent;
+  const js = $("app").textContent;
+  const dados = JSON.stringify({ v: 1, entradas: lista }).replace(/</g, "\\u003c");
+  return '<!doctype html>\n<html lang="pt-BR">\n<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">\n' +
+    '<meta name="theme-color" content="#1d2b1f">\n' +
+    '<meta name="mobile-web-app-capable" content="yes">\n' +
+    '<meta name="apple-mobile-web-app-capable" content="yes">\n' +
+    '<meta name="apple-mobile-web-app-title" content="Wilson">\n' +
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n' +
+    '<title>Voa, Wilson!</title>\n' +
+    '<style id="css">' + css + '</style>\n' +
+    '</head>\n<body>\n<div id="jogo"></div>\n' +
+    '<script id="dados" type="application/json">' + dados + '<\/script>\n' +
+    '<script id="app">' + js + '<\/script>\n</body>\n</html>\n';
+}
+
+const RECADO = {
+  semSuporte: "Aqui o placar fica guardado só neste aparelho — quem abrir de outro celular vê o próprio.",
+  leitura: "Neste link você só pode ver o placar, então sua pontuação ficou guardada neste aparelho.",
+  cheio: "O placar está recebendo entradas rápido demais agora. A sua ficou guardada neste aparelho.",
+  falhou: "Não deu para atualizar o placar compartilhado. Sua pontuação ficou guardada neste aparelho.",
+};
+function recadoDe(codigo) {
+  if (["not_granted", "not_writer", "not_declared", "consent_required",
+       "capability_disabled", "capability_removed"].includes(codigo)) {
+    podePublicar = false; atualizaSub(); return RECADO.leitura;
+  }
+  if (codigo === "rate_limited") return RECADO.cheio;
+  return RECADO.falhou;
+}
+
+async function publica(lista) {
+  // sucesso recarrega esta view; o que precisa sobreviver vai na sessão antes
+  return artefato.publish(paginaHTML(lista));
+}
+
+formEl.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const nome = limpaNome(nomeEl.value) || "Anônima";
+  const pontos = parseInt(formEl.dataset.pontos, 10);
+  if (!Number.isFinite(pontos)) return;
+
+  const entrada = { n: nome, p: pontos, d: hoje(), id: Math.random().toString(36).slice(2, 8) };
+  guardar(K_NOME, nome);
+  placarLoc = ordena([...placarLoc, entrada]).slice(0, MAX_PLACAR);
+  guardar(K_LOCAL, placarLoc);
+  euId = entrada.id;
+  formEl.hidden = true;
+  desenhaLista();
+
+  enviarEl.disabled = true;
+  enviarEl.textContent = "Salvando…";
+  avisoEl.textContent = "";
+  if (pArtefato && !artefato) artefato = await pArtefato;   // pode ainda estar carregando
+  if (!artefato) { avisoEl.textContent = temClaude ? RECADO.leitura : RECADO.semSuporte; return; }
+  try { sessionStorage.setItem(K_PEND, JSON.stringify(entrada)); sessionStorage.setItem(K_ABRIR, "1"); } catch (e) {}
+  try {
+    const lista = ordena([...placarPub, entrada]).slice(0, MAX_PLACAR);
+    await publica(lista);
+    // normalmente a view recarrega sozinha na versão nova; se demorar,
+    // já mostra o resultado aqui
+    placarPub = lista;
+    try { sessionStorage.removeItem(K_PEND); } catch (e) {}
+    desenhaLista();
+    avisoEl.textContent = "Pronto! Sua pontuação entrou no placar de todo mundo.";
+  } catch (err) {
+    const codigo = (err && err.code) || "upstream_error";
+    if (codigo === "conflict") return;          // alguém publicou antes; a view já vai recarregar
+    try { sessionStorage.removeItem(K_PEND); } catch (e) {}
+    avisoEl.textContent = recadoDe(codigo);
+  }
+});
+
+// Se a entrada anterior esbarrou em outra publicação, tenta uma vez só depois
+// que a página recarregou na versão vencedora.
+function tentaPendente() {
+  let pend = null;
+  try {
+    pend = JSON.parse(sessionStorage.getItem(K_PEND) || "null");
+    sessionStorage.removeItem(K_PEND);          // uma tentativa por carregamento
+  } catch (e) {}
+  if (!pend || !valida(pend)) return;
+  euId = pend.id;
+  if (placarPub.some(e => chave(e) === chave(pend))) return;   // já entrou
+  const lista = ordena([...placarPub, pend]).slice(0, MAX_PLACAR);
+  if (!lista.some(e => chave(e) === chave(pend))) return;      // já não entra mais no top
+  setTimeout(() => publica(lista).catch(() => {}), 400 + Math.random() * 800);
+}
+
+try {
+  if (sessionStorage.getItem(K_ABRIR)) { sessionStorage.removeItem(K_ABRIR); setTimeout(() => abrePlacar(NaN), 250); }
+} catch (e) {}
 
 // ---------------------------------------------------------------- desenho
 function drawSky() {
@@ -736,7 +1042,7 @@ function medalFor(s) {
 
 function drawButtons() {
   for (const b of buttons) {
-    if (b.hidden) continue;
+    if (b.hidden || (b.so && !b.so())) continue;
     ctx.save();
     ctx.globalAlpha = .78;
     ctx.fillStyle = "rgba(28,20,10,.30)";
@@ -769,6 +1075,21 @@ function drawButtons() {
         ctx.moveTo(cx + 11, cy - 5); ctx.lineTo(cx + 3, cy + 5);
       }
       ctx.stroke();
+    } else if (b.id === "placar") {
+      ctx.beginPath();                       // taça
+      ctx.moveTo(cx - 6, cy - 9);
+      ctx.lineTo(cx + 6, cy - 9);
+      ctx.lineTo(cx + 5, cy - 2);
+      ctx.quadraticCurveTo(cx, cy + 5, cx - 5, cy - 2);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();                       // alças
+      ctx.arc(cx - 7, cy - 6, 3.2, 0.6, 3.6);
+      ctx.moveTo(cx + 10, cy - 5);
+      ctx.arc(cx + 7, cy - 6, 3.2, -0.4, 2.5, true);
+      ctx.stroke();
+      ctx.fillRect(cx - 1.5, cy + 3, 3, 4);  // pé
+      ctx.fillRect(cx - 6, cy + 7, 12, 2.6); // base
     } else {
       const r = 8, k = 4;
       const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
