@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1410">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lo siento, Wilson">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="A galinha Wilson surfando a enchente em cima de uma telha.">
+<title>Lo Siento, Wilson</title>
+<style id="css">
+  @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap");
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0; height: 100%;
+    background: #1b1410;
+    font-family: "Baloo 2", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(120% 90% at 50% 0%, #4a3524 0%, #1b1410 70%);
+  }
+  canvas {
+    display: block; border-radius: 14px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6), 0 0 0 3px rgba(255,255,255,.06);
+    cursor: pointer; touch-action: none;
+  }
+  @media (pointer: coarse) {
+    #wrap { padding: 0; }
+    canvas { border-radius: 0; box-shadow: none; }
+    #hint { display: none; }
+  }
+  #hint {
+    margin: 0; position: fixed; left: 0; right: 0; bottom: 8px;
+    text-align: center; color: rgba(255,255,255,.45);
+    font-size: 12px; letter-spacing: .04em; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" aria-label="Jogo: Wilson surfando a enchente"></canvas></div>
+<p id="hint">Segure espaço / o dedo na tela para afundar na descida &nbsp;·&nbsp; solte para decolar &nbsp;·&nbsp; P = pausa &nbsp;·&nbsp; M = som</p>
+<script id="app">
+(() => {
+"use strict";
+
+// ---------------------------------------------------------------- setup
+const W = 480;                       // largura lógica fixa
+const FONT = '"Baloo 2", "Trebuchet MS", "Segoe UI", sans-serif';
+let H = 720, BASE = 0;               // altura lógica e linha d'água de repouso
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
+function resize() {
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth;
+  const vh = vv ? vv.height : window.innerHeight;
+  const pad = isTouch ? 0 : 16, footer = isTouch ? 0 : 18;
+  const availW = vw - pad, availH = vh - pad - footer;
+  const aspect = Math.max(1.35, Math.min(2.0, availH / availW));
+  H = Math.round(W * aspect);
+  BASE = Math.round(H * 0.56);       // as ondas ficam no meio da tela
+  const scale = Math.min(availW / W, availH / H);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = Math.round(W * scale) + "px";
+  canvas.style.height = Math.round(H * scale) + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
+resize();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
+
+// ---------------------------------------------------------------- áudio
+const Sfx = {
+  ctx: null, on: true, ruido: null,
+  boot() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) { this.ctx = new AC(); this.fazRuido(); }
+    }
+    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+  },
+  fazRuido() {
+    const n = this.ctx.sampleRate * 1.2;
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    this.ruido = buf;
+  },
+  tom(freq, dur, tipo = "square", vol = .07, ate = null) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator(), g = this.ctx.createGain();
+    osc.type = tipo;
+    osc.frequency.setValueAtTime(freq, t);
+    if (ate) osc.frequency.exponentialRampToValueAtTime(Math.max(40, ate), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + .012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(this.ctx.destination);
+    osc.start(t); osc.stop(t + dur + .02);
+  },
+  agua(dur = .35, corte = 1200, vol = .16) {          // barulho de água/spray
+    if (!this.on || !this.ctx || !this.ruido) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource(); src.buffer = this.ruido;
+    const f = this.ctx.createBiquadFilter(); f.type = "lowpass";
+    f.frequency.setValueAtTime(corte, t);
+    f.frequency.exponentialRampToValueAtTime(Math.max(180, corte * .25), t + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(this.ctx.destination);
+    src.start(t); src.stop(t + dur);
+  },
+  decola() { this.agua(.28, 2200, .12); this.tom(420, .12, "sine", .05, 780); },
+  pousa()  { this.agua(.22, 900, .13); },
+  tombo()  { this.agua(.6, 1800, .22); this.tom(180, .3, "sawtooth", .09, 70); },
+  milho()  { this.tom(880, .07, "sine", .07); setTimeout(() => this.tom(1320, .1, "sine", .06), 60); },
+  giro()   { this.tom(600, .07, "triangle", .06); setTimeout(() => this.tom(900, .07, "triangle", .06), 70);
+             setTimeout(() => this.tom(1200, .1, "triangle", .06), 140); },
+  cocorico() { this.tom(760, .08, "square", .08, 460); setTimeout(() => this.tom(520, .14, "square", .07, 240), 100); },
+};
+function buzz(p) { if (navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
+
+// ---------------------------------------------------------------- ondas
+// Três senóides somadas: dá um mar infinito, liso e com inclinação exata
+// (a derivada é analítica), que é o que a física do surf precisa.
+const A1 = 85, F1 = 0.0040;          // marulho longo
+const A2 = 30, F2 = 0.0100;          // onda média
+const A3 = 8,  F3 = 0.0220;          // ondulação curta
+const P2 = 1.7, P3 = 4.1;
+
+function alturaOnda(x) {
+  return BASE + A1 * Math.sin(x * F1) + A2 * Math.sin(x * F2 + P2) + A3 * Math.sin(x * F3 + P3);
+}
+function inclinacao(x) {
+  return A1 * F1 * Math.cos(x * F1) + A2 * F2 * Math.cos(x * F2 + P2) + A3 * F3 * Math.cos(x * F3 + P3);
+}
+
+// ---------------------------------------------------------------- estado
+const Estado = { PRONTO: 0, SURF: 1, FIM: 2, PAUSA: 3 };
+let estado = Estado.PRONTO;
+
+const REC_KEY = "wilson.surf.recorde";
+let recorde = 0;
+try { recorde = parseInt(localStorage.getItem(REC_KEY) || "0", 10) || 0; } catch (e) {}
+
+const G = 1500, MERGULHO = 2.5, ARRASTO = 0.26;
+const VX_MIN = 120, VX_MAX = 1020;
+const R = 15;                        // raio de colisão da Wilson
+
+const w = {                          // a estrela, em cima da telha
+  x: 0, y: 0, vx: 0, vy: 0, rot: 0, naAgua: true,
+  giro: 0, giros: 0, molho: 0,       // molho = tremida depois de um tombo feio
+};
+
+let camX = 0, dist = 0, pontos = 0, milhos = 0, segurando = false;
+let obstaculos = [], milharal = [], respingos = [], penas = [];
+let proxObst = 0, proxMilho = 0;
+let ondaX = 0, ondaV = 0;            // a enchente que vem atrás
+let tremor = 0, fimT = 0, aviso = null, avisoT = 0;
+let nuvens = [], casas = [];
+
+function metros() { return Math.max(0, Math.floor(dist / 10)); }
+function total() { return metros() + milhos * 10 + w.giros * 20; }
+
+function semear() {
+  nuvens = [];
+  for (let i = 0; i < 8; i++) {
+    nuvens.push({ x: Math.random() * 2400, y: 30 + Math.random() * 170, s: .6 + Math.random() * 1.1, v: .05 + Math.random() * .12 });
+  }
+  casas = [];
+  for (let i = 0; i < 26; i++) {
+    casas.push({ x: i * 380 + Math.random() * 180, tipo: Math.floor(Math.random() * 3), alt: 40 + Math.random() * 46 });
+  }
+}
+semear();
+
+function reinicia() {
+  w.x = 300; w.y = alturaOnda(w.x); w.vx = 300; w.vy = 0; w.rot = 0;
+  w.naAgua = true; w.giro = 0; w.giros = 0; w.molho = 0;
+  camX = w.x - W * 0.34; dist = 0; pontos = 0; milhos = 0;
+  obstaculos = []; milharal = []; respingos = []; penas = [];
+  proxObst = w.x + 2300; proxMilho = w.x + 500;
+  ondaX = w.x - 1000; ondaV = 170;
+  tremor = 0; fimT = 0; aviso = null; avisoT = 0;
+  segurando = false;
+}
+reinicia();
+
+// ---------------------------------------------------------------- entrada
+function comeca() {
+  Sfx.boot();
+  if (estado === Estado.PRONTO) { reinicia(); estado = Estado.SURF; }
+  else if (estado === Estado.PAUSA) estado = Estado.SURF;
+  else if (estado === Estado.FIM && fimT > 0.7) { reinicia(); estado = Estado.PRONTO; }
+}
+function pressiona() { segurando = true; comeca(); }
+function solta() { segurando = false; }
+
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space" || e.code === "ArrowDown" || e.code === "Enter" || e.code === "KeyS") {
+    e.preventDefault(); if (!e.repeat) pressiona();
+  } else if (e.code === "KeyP" || e.code === "Escape") {
+    if (estado === Estado.SURF) estado = Estado.PAUSA;
+    else if (estado === Estado.PAUSA) estado = Estado.SURF;
+  } else if (e.code === "KeyM") { Sfx.on = !Sfx.on; }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "Space" || e.code === "ArrowDown" || e.code === "Enter" || e.code === "KeyS") solta();
+});
+
+const FS_OK = !!document.documentElement.requestFullscreen;
+const BW = 46, BH = 38, BG = 8, BY = 12;
+const botoes = [
+  { id: "pausa", faz: () => { if (estado === Estado.SURF) estado = Estado.PAUSA; else if (estado === Estado.PAUSA) estado = Estado.SURF; } },
+  { id: "som", faz: () => { Sfx.on = !Sfx.on; Sfx.boot(); } },
+];
+if (FS_OK) botoes.push({ id: "tela", faz: telaCheia });
+botoes.forEach((b, i) => {
+  b.x = W - 12 - (botoes.length - i) * BW - (botoes.length - 1 - i) * BG;
+  b.y = BY; b.w = BW; b.h = BH;
+});
+function telaCheia() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  const req = document.documentElement.requestFullscreen({ navigationUI: "hide" });
+  if (req && req.catch) req.catch(() => {
+    const b = botoes.find(x => x.id === "tela"); if (b) b.oculto = true;
+  });
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  const folga = 10;
+  for (const b of botoes) {
+    if (b.oculto) continue;
+    if (x > b.x - folga && x < b.x + b.w + folga && y > b.y - folga && y < b.y + b.h + folga) {
+      Sfx.boot(); b.faz(); buzz(8); return;
+    }
+  }
+  pressiona();
+}, { passive: false });
+canvas.addEventListener("pointerup", solta);
+canvas.addEventListener("pointercancel", solta);
+canvas.addEventListener("pointerleave", solta);
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+window.addEventListener("blur", () => { solta(); if (estado === Estado.SURF) estado = Estado.PAUSA; });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && estado === Estado.SURF) { solta(); estado = Estado.PAUSA; }
+});
+
+// ---------------------------------------------------------------- mundo
+function povoa() {
+  const ate = camX + W * 2.2;
+  while (proxObst < ate) {
+    const tipo = Math.floor(Math.random() * 4);
+    obstaculos.push({ x: valeApos(proxObst), tipo, fase: Math.random() * 6 });
+    proxObst += 760 + Math.random() * 700 - Math.min(320, dist / 60);
+  }
+  while (proxMilho < ate) {
+    const alto = Math.random() < .45;                 // milho no ar, prêmio de manobra
+    milharal.push({ x: proxMilho, alto, dy: alto ? 110 + Math.random() * 90 : 26, fase: Math.random() * 6, pego: false });
+    proxMilho += 320 + Math.random() * 460;
+  }
+}
+// o entulho boia no fundo do vale: com velocidade você passa voando por cima,
+// devagar você bate — é essa a troca do jogo
+function valeApos(x) {
+  let ant = inclinacao(x);
+  for (let i = 1; i <= 150; i++) {
+    const xx = x + i * 8, s2 = inclinacao(xx);
+    if (ant > 0 && s2 <= 0) return xx;
+    ant = s2;
+  }
+  return x + 400;
+}
+
+function limpa() {
+  const tras = ondaX - 600;
+  obstaculos = obstaculos.filter(o => o.x > tras);
+  milharal = milharal.filter(m => m.x > tras);
+}
+
+function respingo(x, y, n, forca) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.2;
+    const v = forca * (.4 + Math.random() * .9);
+    respingos.push({ x, y, vx: Math.cos(a) * v + w.vx * .25, vy: Math.sin(a) * v, t: 0, vida: .5 + Math.random() * .5, r: 1.5 + Math.random() * 2.5 });
+  }
+}
+function pena(x, y) {
+  const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 180;
+  penas.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 70, a: Math.random() * 6, va: (Math.random() - .5) * 8, t: 0, vida: 1.1, s: 3 + Math.random() * 4 });
+}
+function diz(txt) { aviso = txt; avisoT = 0; }
+
+// ---------------------------------------------------------------- física
+function passo(dt) {
+  const antes = w.x;
+
+  if (w.naAgua) {
+    const s = inclinacao(w.x);
+    const ang = Math.atan(s);
+    const peso = segurando ? MERGULHO : 1;
+    // descida acelera, subida freia — segurar aumenta os dois
+    w.vx += Math.sin(ang) * G * peso * 0.85 * dt;
+    w.vx -= w.vx * ARRASTO * dt;
+    if (w.molho > 0) { w.molho -= dt; w.vx -= w.vx * 1.5 * dt; }
+    w.vx = Math.max(VX_MIN, Math.min(VX_MAX, w.vx));
+    w.x += w.vx * dt;
+
+    // a onda "foge" debaixo dos pés? então decola
+    const yLivre = w.y + (s * w.vx) * dt + 0.5 * G * dt * dt;
+    const chao = alturaOnda(w.x);
+    if (yLivre < chao - 0.6 && w.vx > 210) {
+      w.naAgua = false;
+      w.vy = s * w.vx;
+      w.giro = 0;
+      Sfx.decola();
+      respingo(w.x, chao, 8, 190);
+    } else {
+      w.y = chao;
+      w.vy = s * w.vx;
+      const alvo = Math.atan(inclinacao(w.x));
+      w.rot += (alvo - w.rot) * Math.min(1, dt * 14);
+      if (segurando && w.vx > 260) respingo(w.x - 12, w.y + 4, 1, 120);
+    }
+  } else {
+    w.vy += G * (segurando ? 1.75 : 1) * dt;
+    w.x += w.vx * dt;
+    w.y += w.vy * dt;
+    if (segurando) {                                   // segurar no ar = mortal
+      const d = 5.0 * dt;
+      w.rot += d; w.giro += d;
+      if (w.giro >= Math.PI * 2) { w.giro -= Math.PI * 2; w.giros++; Sfx.giro(); diz("GIRO!"); buzz(12); }
+    }
+    const chao = alturaOnda(w.x);
+    if (w.y >= chao) {                                 // pousou
+      w.y = chao;
+      const ang = Math.atan(inclinacao(w.x));
+      let dif = w.rot - ang;
+      while (dif > Math.PI) dif -= Math.PI * 2;
+      while (dif < -Math.PI) dif += Math.PI * 2;
+      w.naAgua = true;
+      w.rot = ang;
+      if (Math.abs(dif) < 0.62) {
+        w.vx = Math.min(VX_MAX, w.vx * (1 + 0.05 * w.giros));
+        Sfx.pousa();
+        respingo(w.x, w.y, 10, 150);
+        if (w.giros > 0) { diz(w.giros === 1 ? "PANCADA!" : w.giros + " GIROS!"); }
+      } else {                                         // caiu de mau jeito
+        w.vx *= 0.42; w.molho = 0.5;
+        Sfx.tombo(); buzz(40);
+        respingo(w.x, w.y, 26, 260);
+        for (let i = 0; i < 6; i++) pena(w.x, w.y - 10);
+        diz("MOLHOU!");
+      }
+      w.giros = 0; w.giro = 0; w.vy = 0;
+    }
+  }
+
+  dist += Math.max(0, w.x - antes);
+
+  // a enchente vem atrás; se você surfa mal, ela alcança
+  ondaV = Math.min(430, 170 + dist * 0.006);
+  ondaX += ondaV * dt;
+  const folga = w.x - ondaX;
+  if (folga > 1250) ondaX += (folga - 1250) * 0.8 * dt;
+  if (folga < 26) { acabou("A enchente alcançou a Wilson"); return; }
+
+  // obstáculos
+  for (const o of obstaculos) {
+    const oy = alturaOnda(o.x) + Math.sin(o.fase + dist * .004) * 3;
+    const cx = Math.abs(w.x - o.x), cy = Math.abs(w.y - (oy - 15));
+    if (cx < 13 + R && cy < 15 + R) { acabou("A Wilson bateu no entulho"); return; }
+  }
+  // milho
+  for (const m of milharal) {
+    if (m.pego) continue;
+    const my = alturaOnda(m.x) - m.dy + Math.sin(m.fase + dist * .006) * 4;
+    if (Math.hypot(w.x - m.x, w.y - my) < R + 16) {
+      m.pego = true; milhos++; Sfx.milho(); buzz(8);
+      for (let i = 0; i < 6; i++) respingo(m.x, my, 1, 90);
+    }
+  }
+
+  camX += ((w.x - W * 0.34) - camX) * Math.min(1, dt * 8);
+  povoa(); limpa();
+}
+
+function acabou(motivo) {
+  if (estado === Estado.FIM) return;
+  estado = Estado.FIM; fimT = 0; tremor = 1;
+  Sfx.tombo(); setTimeout(() => Sfx.cocorico(), 220);
+  buzz([60, 40, 90]);
+  respingo(w.x, w.y, 34, 300);
+  for (let i = 0; i < 16; i++) pena(w.x, w.y - 12);
+  pontos = total();
+  if (pontos > recorde) {
+    recorde = pontos;
+    try { localStorage.setItem(REC_KEY, String(recorde)); } catch (e) {}
+  }
+  w.motivo = motivo;
+}
+
+function atualiza(dt) {
+  for (const n of nuvens) {
+    n.x -= n.v * 12 * dt;
+    if (n.x < camX * .12 - 200) n.x += 2600;
+  }
+  for (const r of respingos) {
+    r.t += dt; r.vy += 620 * dt; r.x += r.vx * dt; r.y += r.vy * dt; r.vx *= .995;
+  }
+  respingos = respingos.filter(r => r.t < r.vida);
+  for (const p of penas) {
+    p.t += dt; p.vy += 300 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.a += p.va * dt; p.vx *= .99;
+  }
+  penas = penas.filter(p => p.t < p.vida);
+  if (tremor > 0) tremor = Math.max(0, tremor - dt * 2.4);
+  if (aviso) { avisoT += dt; if (avisoT > 1.4) aviso = null; }
+
+  if (estado === Estado.PRONTO) {
+    // a Wilson fica boiando, esperando
+    w.x += 40 * dt; dist = 0;
+    w.y = alturaOnda(w.x);
+    w.rot += (Math.atan(inclinacao(w.x)) - w.rot) * Math.min(1, dt * 8);
+    camX += ((w.x - W * 0.34) - camX) * Math.min(1, dt * 8);
+    ondaX = w.x - 1000;
+    povoa();
+    return;
+  }
+  if (estado === Estado.PAUSA) return;
+  if (estado === Estado.FIM) {
+    fimT += dt;
+    w.y = Math.min(alturaOnda(w.x) + 22, w.y + 90 * dt);   // afunda devagar
+    w.rot += dt * 1.2;
+    ondaX += ondaV * .5 * dt;
+    return;
+  }
+  passo(dt);
+}
+
+// ---------------------------------------------------------------- desenho
+function ceu() {
+  const g = ctx.createLinearGradient(0, 0, 0, H * .8);
+  g.addColorStop(0, "#4d6f86");
+  g.addColorStop(.42, "#93a8b0");
+  g.addColorStop(.74, "#c9bfae");
+  g.addColorStop(1, "#ddcdb2");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  ctx.save();                                   // sol encoberto
+  ctx.globalAlpha = .5; ctx.fillStyle = "#fff0cf";
+  ctx.beginPath(); ctx.arc(W * .74, H * .3, 46, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = .16;
+  ctx.beginPath(); ctx.arc(W * .74, H * .3, 78, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  for (const n of nuvens) {
+    const x = n.x - camX * .12;
+    if (x < -220 || x > W + 220) continue;
+    ctx.save();
+    ctx.translate(x, n.y); ctx.scale(n.s, n.s);
+    ctx.fillStyle = "rgba(240,240,238,.72)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.arc(28, 7, 18, 0, Math.PI * 2);
+    ctx.arc(-28, 8, 16, 0, Math.PI * 2);
+    ctx.arc(10, -15, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// a enchente até onde a vista alcança
+function faixaDistante() {
+  const y = BASE - 6;
+  const g = ctx.createLinearGradient(0, y, 0, H);
+  g.addColorStop(0, "#9a8a74");
+  g.addColorStop(.25, "#82715a");
+  g.addColorStop(1, "#63523c");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, y, W, H - y);
+  ctx.fillStyle = "rgba(255,250,238,.35)";       // brilho na linha do horizonte
+  ctx.fillRect(0, y, W, 2);
+}
+
+// cidade submersa: só telhados, postes e palmeiras saindo da água
+function cidade() {
+  const p = 0.45;
+  for (const c of casas) {
+    const x = c.x - camX * p;
+    const xx = ((x % 3800) + 3800) % 3800 - 400;
+    if (xx < -160 || xx > W + 160) continue;
+    const linha = BASE - 30;
+    ctx.save();
+    ctx.translate(xx, linha);
+    ctx.globalAlpha = .62;
+    if (c.tipo === 0) {                          // telhado de duas águas
+      ctx.fillStyle = "#8f4034";
+      ctx.beginPath();
+      ctx.moveTo(-52, 0); ctx.lineTo(0, -c.alt); ctx.lineTo(52, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#6f3128";
+      ctx.fillRect(-52, -2, 104, 6);
+    } else if (c.tipo === 1) {                   // igrejinha
+      ctx.fillStyle = "#cfc4ad";
+      ctx.fillRect(-16, -c.alt - 22, 32, c.alt + 22);
+      ctx.fillStyle = "#8f4034";
+      ctx.beginPath();
+      ctx.moveTo(-22, -c.alt - 22); ctx.lineTo(0, -c.alt - 56); ctx.lineTo(22, -c.alt - 22); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#6f3128"; ctx.fillRect(-3, -c.alt - 14, 6, 18);
+      ctx.fillRect(-9, -c.alt - 8, 18, 5);
+    } else {                                     // palmeira
+      ctx.strokeStyle = "#6b5a3e"; ctx.lineWidth = 6; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(0, 4); ctx.quadraticCurveTo(6, -c.alt * .6, -4, -c.alt); ctx.stroke();
+      ctx.fillStyle = "#4e6b41";
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i - 2) * .62;
+        ctx.save(); ctx.translate(-4, -c.alt); ctx.rotate(a);
+        ctx.beginPath(); ctx.ellipse(26, 0, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+// uma camada de onda: p = parallax, dy = deslocamento, cores próprias
+function camadaAgua(p, dy, corA, corB, espuma, forca = 1) {
+  ctx.beginPath();
+  ctx.moveTo(-4, H);
+  for (let sx = -4; sx <= W + 4; sx += 5) {
+    const wx = (camX + sx) * p;
+    ctx.lineTo(sx, alturaOnda(wx) + dy);
+  }
+  ctx.lineTo(W + 4, H); ctx.closePath();
+  const g = ctx.createLinearGradient(0, BASE + dy - 90, 0, H);
+  g.addColorStop(0, corA); g.addColorStop(1, corB);
+  ctx.fillStyle = g; ctx.fill();
+
+  if (espuma) {
+    ctx.beginPath();
+    for (let sx = -4; sx <= W + 4; sx += 5) {
+      const wx = (camX + sx) * p;
+      const y = alturaOnda(wx) + dy;
+      if (sx === -4) ctx.moveTo(sx, y); else ctx.lineTo(sx, y);
+    }
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,248,232," + (.20 * forca) + ")"; ctx.lineWidth = 9; ctx.stroke();
+    ctx.strokeStyle = "rgba(255,250,238," + (.62 * forca) + ")"; ctx.lineWidth = 2.6; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function aguaFundo() { camadaAgua(0.86, 30, "#83725a", "#5b4a34", true, .35); }
+
+function aguaFrente() {
+  camadaAgua(1, 0, "#7c684d", "#3c2d1d", true, 1);
+
+  // reflexo do céu logo abaixo da superfície + marolas
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-4, H);
+  for (let sx = -4; sx <= W + 4; sx += 5) ctx.lineTo(sx, alturaOnda(camX + sx));
+  ctx.lineTo(W + 4, H); ctx.closePath();
+  ctx.clip();
+
+  for (let sx = -4; sx <= W + 4; sx += 5) {
+    const y = alturaOnda(camX + sx);
+    ctx.fillStyle = "rgba(206,214,210,.18)";
+    ctx.fillRect(sx, y, 5, 34);
+  }
+
+  // marolas: riscos claros acompanhando a superfície
+  const rolo = camX * .6;
+  for (let i = 0; i < 26; i++) {
+    const semente = i * 97.3;
+    const wx = camX + ((semente + rolo * (.5 + (i % 5) * .12)) % (W + 260)) - 130;
+    const prof = 16 + ((i * 53) % 190);
+    const larg = 16 + ((i * 31) % 34);
+    ctx.globalAlpha = .10 + ((i * 17) % 9) / 90;
+    ctx.fillStyle = "#efe6d4";
+    ctx.beginPath();
+    ctx.ellipse(wx - camX, alturaOnda(wx) + prof, larg, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // vulto de telhados e postes submersos passando por baixo
+  ctx.globalAlpha = .12; ctx.fillStyle = "#241a11";
+  for (let i = 0; i < 5; i++) {
+    const wx = camX * .9 + i * 430;
+    const sx = ((wx % 2150) + 2150) % 2150 - 400;
+    const y = alturaOnda(camX + sx) + 110 + (i % 3) * 62;
+    if (i % 2 === 0) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 48, y); ctx.lineTo(sx, y - 32); ctx.lineTo(sx + 48, y);
+      ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillRect(sx - 4, y - 46, 8, 46);
+      ctx.fillRect(sx - 18, y - 44, 36, 6);
+    }
+  }
+  ctx.restore();
+
+  // sujeira boiando: o que a enchente levou junto
+  ctx.save();
+  for (let i = 0; i < 14; i++) {
+    const wx = camX + ((i * 211 + camX * .18) % (W + 300)) - 150;
+    const y = alturaOnda(wx) + 3 + (i % 3);
+    ctx.globalAlpha = .5;
+    if (i % 3 === 0) {
+      ctx.fillStyle = "#4e6b41";                    // folha
+      ctx.beginPath();
+      ctx.ellipse(wx - camX, y, 6, 2.6, Math.sin(i + camX * .002), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (i % 3 === 1) {
+      ctx.fillStyle = "#6b4a2b";                    // graveto
+      ctx.fillRect(wx - camX, y, 11, 2.2);
+    } else {
+      ctx.fillStyle = "rgba(220,228,222,.75)";      // garrafa
+      ctx.beginPath();
+      ctx.ellipse(wx - camX, y, 4, 2, .3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function desenhaOnda() {                          // a enchente que persegue
+  const sx = ondaX - camX;
+  if (sx < -320) return;
+  ctx.save();
+  const topo = alturaOnda(ondaX) - 210;
+  ctx.beginPath();
+  ctx.moveTo(sx, H);
+  ctx.lineTo(sx, topo + 40);
+  ctx.quadraticCurveTo(sx + 26, topo - 14, sx - 34, topo - 4);
+  ctx.quadraticCurveTo(sx - 8, topo + 26, sx - 26, H);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(sx - 60, topo, sx + 20, H);
+  g.addColorStop(0, "#7d5a35"); g.addColorStop(1, "#3a2716");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.fillStyle = "#4a3320";
+  ctx.fillRect(-4, topo + 30, sx + 4, H);
+  ctx.fillStyle = "rgba(255,248,232,.75)";       // crista com espuma
+  ctx.beginPath();
+  ctx.ellipse(sx - 12, topo + 2, 30, 13, -.3, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = .5;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.arc(sx - 40 + Math.sin(dist * .01 + i) * 14, topo + 30 + i * 34, 8 - i, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function desenhaObstaculos() {
+  for (const o of obstaculos) {
+    const sx = o.x - camX;
+    if (sx < -80 || sx > W + 80) continue;
+    const y = alturaOnda(o.x) + Math.sin(o.fase + dist * .004) * 3;
+    ctx.save();
+    ctx.translate(sx, y);
+    ctx.rotate(Math.atan(inclinacao(o.x)) * .5);
+    if (o.tipo === 0) {                           // geladeira boiando
+      ctx.fillStyle = "#e6e2d8"; ctx.fillRect(-16, -34, 32, 36);
+      ctx.fillStyle = "#c9c3b5"; ctx.fillRect(-16, -14, 32, 3);
+      ctx.fillStyle = "#9aa0a2"; ctx.fillRect(9, -30, 3, 12); ctx.fillRect(9, -9, 3, 8);
+    } else if (o.tipo === 1) {                    // pneu
+      ctx.fillStyle = "#2f2b2a";
+      ctx.beginPath(); ctx.arc(0, -14, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#8a8580";
+      ctx.beginPath(); ctx.arc(0, -14, 7, 0, Math.PI * 2); ctx.fill();
+    } else if (o.tipo === 2) {                    // tronco/galhada
+      ctx.fillStyle = "#6b4a2b";
+      ctx.fillRect(-26, -14, 52, 13);
+      ctx.strokeStyle = "#6b4a2b"; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-6, -12); ctx.lineTo(-18, -30);
+      ctx.moveTo(8, -12); ctx.lineTo(20, -26);
+      ctx.stroke();
+      ctx.fillStyle = "#4e6b41";
+      ctx.beginPath(); ctx.ellipse(-20, -32, 9, 5, -.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(22, -28, 8, 5, .4, 0, Math.PI * 2); ctx.fill();
+    } else {                                      // caixa d'água
+      ctx.fillStyle = "#3f6f8c";
+      ctx.beginPath(); ctx.ellipse(0, -30, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-18, -30, 36, 30);
+      ctx.fillStyle = "#33607a"; ctx.fillRect(-18, -8, 36, 8);
+    }
+    ctx.restore();
+  }
+}
+
+function desenhaMilho() {
+  for (const m of milharal) {
+    if (m.pego) continue;
+    const sx = m.x - camX;
+    if (sx < -40 || sx > W + 40) continue;
+    const y = alturaOnda(m.x) - m.dy + Math.sin(m.fase + dist * .006) * 4;
+    ctx.save();
+    ctx.translate(sx, y);
+    ctx.rotate(Math.sin(m.fase + dist * .01) * .25);
+    ctx.fillStyle = "#f2c231";
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 15, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#d9a41c";
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath(); ctx.arc(0, i * 5.5, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = "#79a24a";
+    ctx.beginPath(); ctx.ellipse(-8, 2, 5, 13, .35, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(8, 2, 5, 13, -.35, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function particulas() {
+  for (const r of respingos) {
+    const a = Math.max(0, 1 - r.t / r.vida);
+    ctx.globalAlpha = a * .9;
+    ctx.fillStyle = "#fff6e4";
+    ctx.beginPath(); ctx.arc(r.x - camX, r.y, r.r, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const p of penas) {
+    const a = Math.max(0, 1 - p.t / p.vida);
+    ctx.globalAlpha = a;
+    ctx.save();
+    ctx.translate(p.x - camX, p.y); ctx.rotate(p.a);
+    ctx.fillStyle = "#fffaf0";
+    ctx.beginPath(); ctx.ellipse(0, 0, p.s, p.s * .5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ------------------------------------------------- Wilson em cima da telha
+function desenhaWilson() {
+  ctx.save();
+  ctx.translate(w.x - camX, w.y);
+
+  // rastro de espuma na água, mais forte quanto mais rápido
+  if (w.naAgua && w.vx > 200) {
+    ctx.save();
+    const f = Math.min(1, (w.vx - 200) / 500);
+    ctx.fillStyle = "rgba(255,250,238,.5)";
+    for (let i = 0; i < 4; i++) {
+      ctx.globalAlpha = .45 * f * (1 - i / 4);
+      ctx.beginPath();
+      ctx.ellipse(-30 - i * 20, 7 + i, 14 + i * 6, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  ctx.rotate(w.rot);
+  ctx.scale(1.14, 1.14);
+  ctx.translate(0, -6);                 // a telha boia na linha d'água
+
+  // telha colonial
+  ctx.fillStyle = "#a8442f";
+  ctx.beginPath();
+  ctx.moveTo(-31, 5);
+  ctx.quadraticCurveTo(0, -8, 31, 5);
+  ctx.quadraticCurveTo(31, 17, 26, 18);
+  ctx.quadraticCurveTo(0, 6, -26, 18);
+  ctx.quadraticCurveTo(-31, 17, -31, 5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#c05c3f";
+  ctx.beginPath();
+  ctx.moveTo(-31, 5);
+  ctx.quadraticCurveTo(0, -8, 31, 5);
+  ctx.quadraticCurveTo(0, 1, -31, 5);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(90,32,20,.5)"; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,.18)";
+  ctx.beginPath();
+  ctx.moveTo(-26, 5); ctx.quadraticCurveTo(0, -4, 26, 5);
+  ctx.quadraticCurveTo(0, 0, -26, 5);
+  ctx.closePath(); ctx.fill();
+
+  // pernas fincadas na telha
+  ctx.strokeStyle = "#e28a1c"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-3, 0); ctx.lineTo(-5, 5); ctx.lineTo(-11, 6);
+  ctx.moveTo(5, 0); ctx.lineTo(4, 5); ctx.lineTo(-2, 6);
+  ctx.stroke();
+
+  ctx.translate(0, -14);
+  const abre = w.naAgua ? 0 : 1;                  // no ar ela abre as asas
+
+  // cauda
+  ctx.fillStyle = "#efe1c6";
+  ctx.beginPath();
+  ctx.moveTo(-14, -2);
+  ctx.quadraticCurveTo(-32, -14, -28, 2);
+  ctx.quadraticCurveTo(-28, 10, -12, 8);
+  ctx.closePath(); ctx.fill();
+
+  // corpo
+  const bg = ctx.createLinearGradient(0, -16, 0, 16);
+  bg.addColorStop(0, "#ffffff"); bg.addColorStop(.65, "#fdf4e0"); bg.addColorStop(1, "#e9d9ba");
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(0, 0, 19, 15, 0, 0, Math.PI * 2); ctx.fill();
+
+  // cabeça
+  ctx.fillStyle = "#fffdf6";
+  ctx.beginPath(); ctx.arc(12, -11, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#e04338";                      // crista
+  ctx.beginPath();
+  ctx.arc(8, -21, 4.2, 0, Math.PI * 2);
+  ctx.arc(14, -24, 4.8, 0, Math.PI * 2);
+  ctx.arc(19, -21, 3.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f7a723";                      // bico
+  ctx.beginPath();
+  ctx.moveTo(21, -12); ctx.lineTo(32, -9); ctx.lineTo(21, -5.5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#e04338";                      // barbela
+  ctx.beginPath(); ctx.ellipse(20, -2, 3.3, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fff";                         // olho
+  ctx.beginPath(); ctx.arc(16, -14, 4.3, 0, Math.PI * 2); ctx.fill();
+  if (estado === Estado.FIM) {
+    ctx.strokeStyle = "#2b2118"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(13, -17); ctx.lineTo(19, -11);
+    ctx.moveTo(19, -17); ctx.lineTo(13, -11);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = "#2b2118";
+    ctx.beginPath(); ctx.arc(17.4, -14, 2.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // asa: colada no corpo na água, aberta no ar
+  ctx.save();
+  ctx.translate(-2, -2);
+  ctx.rotate(-abre * 0.9 + Math.sin(performance.now() / 90) * .05 * abre);
+  const wg = ctx.createLinearGradient(0, -8, 0, 12);
+  wg.addColorStop(0, "#fffaf0"); wg.addColorStop(1, "#e3d0ab");
+  ctx.fillStyle = wg;
+  ctx.beginPath(); ctx.ellipse(-2, 2, 13 + abre * 4, 8.5, -.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(160,135,95,.5)"; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(-11, 3); ctx.quadraticCurveTo(-2, 7, 8, 3); ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- interface
+function texto(s, x, y, tam, cor, alinha = "center", peso = "bold", traco = 4) {
+  ctx.font = peso + " " + tam + "px " + FONT;
+  ctx.textAlign = alinha; ctx.textBaseline = "alphabetic";
+  if (traco) {
+    ctx.lineWidth = traco; ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(40,24,12,.6)";
+    ctx.strokeText(s, x, y);
+  }
+  ctx.fillStyle = cor; ctx.fillText(s, x, y);
+}
+function cantoRedondo(x, y, w2, h2, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w2, y, x + w2, y + h2, r);
+  ctx.arcTo(x + w2, y + h2, x, y + h2, r);
+  ctx.arcTo(x, y + h2, x, y, r);
+  ctx.arcTo(x, y, x + w2, y, r);
+  ctx.closePath();
+}
+function painel(x, y, w2, h2, r = 18) {
+  ctx.fillStyle = "rgba(255,248,236,.96)";
+  ctx.strokeStyle = "rgba(120,70,40,.7)"; ctx.lineWidth = 3;
+  cantoRedondo(x, y, w2, h2, r); ctx.fill(); ctx.stroke();
+}
+
+function desenhaBotoes() {
+  for (const b of botoes) {
+    if (b.oculto) continue;
+    ctx.save();
+    ctx.globalAlpha = .78;
+    ctx.fillStyle = "rgba(28,18,10,.34)";
+    cantoRedondo(b.x, b.y, b.w, b.h, 10); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1.5; ctx.stroke();
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    ctx.fillStyle = "#fff8e8"; ctx.strokeStyle = "#fff8e8";
+    ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (b.id === "pausa") {
+      if (estado === Estado.PAUSA) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 5, cy - 8); ctx.lineTo(cx + 8, cy); ctx.lineTo(cx - 5, cy + 8);
+        ctx.closePath(); ctx.fill();
+      } else { ctx.fillRect(cx - 7, cy - 8, 5, 16); ctx.fillRect(cx + 2, cy - 8, 5, 16); }
+    } else if (b.id === "som") {
+      ctx.beginPath();
+      ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx, cy - 9);
+      ctx.lineTo(cx, cy + 9); ctx.lineTo(cx - 5, cy + 4); ctx.lineTo(cx - 9, cy + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      if (Sfx.on) ctx.arc(cx + 2, cy, 6, -.9, .9);
+      else { ctx.moveTo(cx + 3, cy - 5); ctx.lineTo(cx + 11, cy + 5); ctx.moveTo(cx + 11, cy - 5); ctx.lineTo(cx + 3, cy + 5); }
+      ctx.stroke();
+    } else {
+      const r = 8, k = 4;
+      ctx.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        ctx.moveTo(cx + sx * r, cy + sy * r - sy * k);
+        ctx.lineTo(cx + sx * r, cy + sy * r);
+        ctx.lineTo(cx + sx * r - sx * k, cy + sy * r);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function medidorOnda() {
+  const folga = Math.max(0, Math.min(1, (w.x - ondaX) / 1250));
+  const larg = 132, x = 12, y = H - 30;
+  ctx.save();
+  ctx.fillStyle = "rgba(28,18,10,.35)";
+  cantoRedondo(x, y, larg, 14, 7); ctx.fill();
+  const g = ctx.createLinearGradient(x, 0, x + larg, 0);
+  g.addColorStop(0, "#d1543a"); g.addColorStop(.5, "#e0a92c"); g.addColorStop(1, "#7fc06a");
+  ctx.fillStyle = g;
+  cantoRedondo(x + 2, y + 2, Math.max(6, (larg - 4) * folga), 10, 5); ctx.fill();
+  ctx.restore();
+  texto("ENCHENTE", x + larg + 8, y + 12, 12, "rgba(255,246,228,.75)", "left", "bold", 3);
+}
+
+function interface2() {
+  if (estado === Estado.SURF || estado === Estado.PAUSA) {
+    texto(String(total()), W / 2, 78, 50, "#fff8ea", "center", "bold", 6);
+    texto("milho ×" + milhos, W / 2, 102, 16, "#ffe2ab", "center", "bold", 4);
+    medidorOnda();
+    if (aviso) {
+      const a = Math.max(0, 1 - avisoT / 1.4);
+      ctx.save(); ctx.globalAlpha = a;
+      texto(aviso, w.x - camX, w.y - 70 - avisoT * 26, 26, "#ffe9a8", "center", "bold", 5);
+      ctx.restore();
+    }
+  }
+
+  if (estado === Estado.PRONTO) {
+    const ty = H * 0.2;
+    texto("LO SIENTO,", W / 2, ty, 30, "#ffe2ab", "center", "bold", 6);
+    texto("WILSON", W / 2, ty + 56, 64, "#fff8ea", "center", "bold", 8);
+    texto("a galinha surfista", W / 2, ty + 88, 20, "#ffd9a0", "center", "bold", 5);
+
+    const bob = Math.sin(performance.now() / 320) * 5;
+    const py = Math.min(H * 0.66, H - 190);
+    painel(W / 2 - 152, py + bob, 304, 118, 18);
+    texto(isTouch ? "SEGURE O DEDO NA TELA" : "SEGURE ESPAÇO", W / 2, py + 34 + bob, 19, "#5a3d1e", "center", "bold", 0);
+    texto("para afundar na descida", W / 2, py + 58 + bob, 16, "#8a6a44", "center", "normal", 0);
+    texto("solte na crista para decolar", W / 2, py + 78 + bob, 16, "#8a6a44", "center", "normal", 0);
+    texto("Recorde: " + recorde, W / 2, py + 102 + bob, 15, "#a8853f", "center", "bold", 0);
+  }
+
+  if (estado === Estado.PAUSA) {
+    ctx.fillStyle = "rgba(0,0,0,.42)"; ctx.fillRect(0, 0, W, H);
+    texto("PAUSA", W / 2, H / 2, 46, "#fff8ea", "center", "bold", 7);
+    texto(isTouch ? "toque para continuar" : "P ou toque para continuar", W / 2, H / 2 + 32, 17, "#ffe2ab", "center", "bold", 4);
+  }
+
+  if (estado === Estado.FIM) {
+    const t = Math.min(1, fimT / .35);
+    const y0 = H * 0.24 + (1 - t) * 40;
+    ctx.save(); ctx.globalAlpha = t;
+    texto("LO SIENTO,", W / 2, y0 - 52, 30, "#ffd9a0", "center", "bold", 6);
+    texto("WILSON", W / 2, y0 - 16, 46, "#fff8ea", "center", "bold", 7);
+    painel(W / 2 - 150, y0, 300, 218, 20);
+    texto(w.motivo || "", W / 2, y0 + 30, 14, "#a8853f", "center", "normal", 0);
+    texto(String(pontos), W / 2, y0 + 84, 50, "#5a3d1e", "center", "bold", 0);
+    texto(metros() + " m  ·  milho ×" + milhos, W / 2, y0 + 112, 15, "#8a6a44", "center", "bold", 0);
+    texto("RECORDE", W / 2, y0 + 144, 14, "#a8853f", "center", "bold", 0);
+    texto(String(recorde), W / 2, y0 + 172, 24, "#5a3d1e", "center", "bold", 0);
+    if (pontos >= recorde && pontos > 0) texto("NOVO RECORDE!", W / 2, y0 + 198, 16, "#e0762a", "center", "bold", 0);
+    if (fimT > 0.7) {
+      ctx.globalAlpha = t * (.55 + Math.abs(Math.sin(performance.now() / 420)) * .45);
+      texto(isTouch ? "toque para surfar de novo" : "toque ou espaço para surfar de novo",
+            W / 2, y0 + 258, 16, "#fff3d6", "center", "bold", 4);
+    }
+    ctx.restore();
+  }
+  desenhaBotoes();
+}
+
+// ---------------------------------------------------------------- quadro
+function desenha() {
+  ctx.save();
+  if (tremor > 0) ctx.translate((Math.random() - .5) * 12 * tremor, (Math.random() - .5) * 12 * tremor);
+  ceu();
+  faixaDistante();
+  cidade();
+  aguaFundo();
+  aguaFrente();
+  desenhaMilho();
+  desenhaObstaculos();
+  desenhaWilson();
+  desenhaOnda();
+  particulas();
+  ctx.restore();
+  interface2();
+}
+
+let ultimo = performance.now();
+function laco(agora) {
+  let dt = (agora - ultimo) / 1000;
+  ultimo = agora;
+  if (dt > 0.05) dt = 0.05;
+  atualiza(dt);
+  desenha();
+  requestAnimationFrame(laco);
+}
+requestAnimationFrame(laco);
+
+})();
+</script>
+</body>
+</html>
