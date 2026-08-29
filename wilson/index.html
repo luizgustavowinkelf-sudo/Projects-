@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1d2b1f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wilson">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Flappy Bird com uma galinha chamada Wilson.">
+<title>Voa, Wilson!</title>
+<style id="css">
+  @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap");
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0; height: 100%;
+    background: #1d2b1f;
+    font-family: "Baloo 2", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;            /* nada de "puxar para atualizar" */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #3b5a3c 0%, #1d2b1f 70%);
+  }
+  canvas {
+    display: block;
+    border-radius: 14px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 3px rgba(255,255,255,.06);
+    cursor: pointer;
+    touch-action: none;                   /* sem zoom/scroll ao tocar no jogo */
+    image-rendering: auto;
+  }
+  /* No celular o jogo ocupa a tela toda: sem cantos, sem sombra, sem rodapé */
+  @media (pointer: coarse) {
+    #wrap { padding: 0; }
+    canvas { border-radius: 0; box-shadow: none; }
+    #hint { display: none; }
+  }
+  #hint {
+    margin: 0;
+    position: fixed; left: 0; right: 0; bottom: 8px;
+    text-align: center; color: rgba(255,255,255,.45);
+    font-size: 12px; letter-spacing: .04em; pointer-events: none;
+  }
+
+  /* ---------------------------------------------------- placar */
+  #ui[hidden] { display: none; }
+  #ui {
+    position: fixed; inset: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background: rgba(26,17,8,.62);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  #cartao {
+    width: min(420px, 100%); max-height: 88vh; overflow-y: auto;
+    background: #fffaee; color: #5a3d1e;
+    border: 3px solid #8a5a2c; border-radius: 22px;
+    box-shadow: 0 22px 55px rgba(0,0,0,.5);
+    padding: 20px 18px 16px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #cartao h2 {
+    margin: 0; font-size: 28px; font-weight: 800; line-height: 1.1;
+    text-wrap: balance; letter-spacing: .01em;
+  }
+  #cartao h2 span { display: block; font-size: 14px; font-weight: 600; color: #a8853f; }
+  #lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #lista li {
+    display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
+    background: #f4e8d1; border-radius: 13px; padding: 9px 12px;
+  }
+  #lista li.eu { background: #ffe6ac; box-shadow: inset 0 0 0 2px #e0a92c; }
+  #lista .pos { font-weight: 800; color: #a8853f; text-align: right; font-variant-numeric: tabular-nums; }
+  #lista .nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #lista .pts { font-weight: 800; font-size: 19px; font-variant-numeric: tabular-nums; }
+  #lista .so-aqui { font-size: 11px; color: #a8853f; font-weight: 600; }
+  #vazio, #aviso { margin: 0; font-size: 14px; color: #8a6a44; line-height: 1.45; }
+  #aviso:empty { display: none; }
+  #formNome { display: flex; flex-direction: column; gap: 8px; }
+  #formNome label { font-size: 13px; font-weight: 700; color: #a8853f; letter-spacing: .05em; text-transform: uppercase; }
+  #nome {
+    font: 600 17px/1 inherit; font-family: inherit; color: #5a3d1e;
+    padding: 13px 14px; border-radius: 13px; border: 2px solid #dcc7a2; background: #fff; width: 100%;
+  }
+  #nome:focus-visible, #cartao button:focus-visible { outline: 3px solid #e0762a; outline-offset: 2px; }
+  #cartao button {
+    min-height: 48px; padding: 0 18px; border: none; border-radius: 13px;
+    font: 800 17px/1 inherit; font-family: inherit; cursor: pointer;
+  }
+  .primario { background: #e0762a; color: #fff8ee; }
+  .primario:active { background: #c9631f; }
+  .secundario { background: none; color: #8a6a44; text-decoration: underline; min-height: 40px !important; }
+</style>
+</head>
+<body>
+<div id="jogo"></div>
+<script id="dados" type="application/json">{"v":1,"entradas":[]}</script>
+<script id="app">
+(() => {
+"use strict";
+
+// ---------------------------------------------------------------- corpo
+// O corpo vive numa constante só: é o mesmo texto usado para republicar a
+// página quando alguém entra no placar (ver paginaHTML mais abaixo).
+const CORPO = `
+<div id="wrap"><canvas id="game" aria-label="Jogo Wilson, a galinha voadora"></canvas></div>
+<p id="hint">Espaço / clique / toque = bater as asas &nbsp;·&nbsp; P = pausa &nbsp;·&nbsp; M = som</p>
+<div id="ui" hidden>
+  <div id="cartao" role="dialog" aria-modal="true" aria-labelledby="uiTitulo">
+    <h2 id="uiTitulo">Placar do galinheiro<span id="uiSub">as dez melhores voadoras</span></h2>
+    <ol id="lista"></ol>
+    <p id="vazio">Ainda não tem ninguém no quadro. Seja a primeira galinha.</p>
+    <form id="formNome" hidden>
+      <label for="nome">Seu nome</label>
+      <input id="nome" maxlength="16" autocomplete="nickname" enterkeyhint="done"
+             spellcheck="false" placeholder="Wilson Jr.">
+      <button type="submit" class="primario" id="enviar">Entrar no placar</button>
+    </form>
+    <p id="aviso"></p>
+    <button id="fechar" class="secundario" type="button">Voltar ao jogo</button>
+  </div>
+</div>`;
+document.getElementById("jogo").innerHTML = CORPO;
+
+// ---------------------------------------------------------------- setup
+const W = 480;                     // largura lógica fixa
+const FONT = '"Baloo 2", "Trebuchet MS", "Segoe UI", sans-serif';
+const GROUND_H = 104;
+const REF_H = 720;                 // altura de referência para a dificuldade
+let H = REF_H;                     // altura lógica: segue o formato da tela
+let FLOOR_Y = H - GROUND_H;
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
+function resize() {
+  // visualViewport acompanha as barras do Safari/Chrome no celular
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth;
+  const vh = vv ? vv.height : window.innerHeight;
+  const pad = isTouch ? 0 : 16;
+  const footer = isTouch ? 0 : 18;
+  const availW = vw - pad, availH = vh - pad - footer;
+
+  // o campo de jogo assume o formato da tela (entre 3:4 e 1:2), então o
+  // celular joga em tela cheia em vez de ficar com tarjas em cima e embaixo
+  const aspect = Math.max(1.4, Math.min(2.0, availH / availW));
+  H = Math.round(W * aspect);
+  FLOOR_Y = H - GROUND_H;
+
+  const scale = Math.min(availW / W, availH / H);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = Math.round(W * scale) + "px";
+  canvas.style.height = Math.round(H * scale) + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
+resize();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
+
+// ---------------------------------------------------------------- áudio
+const Sfx = {
+  ctx: null, on: true,
+  boot() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this.ctx = new AC();
+    }
+    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+  },
+  tone(freq, dur, type = "square", vol = .08, slideTo = null) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(40, slideTo), t + dur);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t); osc.stop(t + dur + .02);
+  },
+  flap()  { this.tone(520, .10, "square", .05, 300); },
+  score() { this.tone(760, .09, "triangle", .07); setTimeout(() => this.tone(1040, .11, "triangle", .07), 70); },
+  egg()   { this.tone(880, .07, "sine", .07); setTimeout(() => this.tone(1320, .09, "sine", .07), 60);
+            setTimeout(() => this.tone(1760, .12, "sine", .06), 120); },
+  hit()   { this.tone(220, .18, "sawtooth", .10, 90); },
+  cluck() { this.tone(700, .07, "square", .07, 420); setTimeout(() => this.tone(480, .12, "square", .06, 220), 90); },
+};
+
+// ---------------------------------------------------------------- estado
+const State = { READY: 0, PLAY: 1, DEAD: 2, PAUSE: 3 };
+let state = State.READY;
+
+const BEST_KEY = "wilson.best";
+let best = 0;
+try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) {}
+
+const wilson = {
+  x: 128, y: H * 0.42, vy: 0, r: 17,
+  angle: 0, wing: 0, wingSpeed: 8, alive: true,
+};
+
+let pipes = [];      // {x, gapY, gap, passed, egg:{taken}|null}
+let feathers = [];   // partículas
+let sparks = [];     // brilho do ovo
+let clouds = [];
+let score = 0, elapsed = 0, spawnTimer = 0, groundX = 0, bgX = 0, shake = 0, deadTimer = 0, flashAlpha = 0;
+
+const PIPE_W = 74;
+const BASE_SPEED = 168, MAX_SPEED = 268;
+const BASE_GAP = 200, MIN_GAP = 146;
+const GRAVITY = 1750, FLAP_V = -505, MAX_FALL = 880;
+
+function speed()  { return Math.min(MAX_SPEED, BASE_SPEED + score * 3.2); }
+function gapSize(){ return Math.max(MIN_GAP, BASE_GAP - score * 2.1) * (H / REF_H); }
+function spawnGap(){ return (PIPE_W + 200) / speed(); }   // segundos entre canos
+
+function seedClouds() {
+  clouds = [];
+  for (let i = 0; i < 7; i++) {
+    clouds.push({
+      x: Math.random() * (W + 200) - 100,
+      y: 40 + Math.random() * 280,
+      s: 0.55 + Math.random() * 0.9,
+      v: 6 + Math.random() * 14,
+    });
+  }
+}
+seedClouds();
+
+function resetRun() {
+  wilson.x = 128; wilson.y = H * 0.42; wilson.vy = 0; wilson.angle = 0; wilson.alive = true;
+  pipes = []; feathers = []; sparks = [];
+  score = 0; elapsed = 0; spawnTimer = 0; shake = 0; deadTimer = 0; flashAlpha = 0;
+}
+
+function addPipe() {
+  const gap = gapSize();
+  const margin = 74;
+  const gapY = margin + gap / 2 + Math.random() * (FLOOR_Y - gap - margin * 2);
+  const withEgg = pipes.length > 1 && Math.random() < 0.32;
+  pipes.push({ x: W + PIPE_W, gapY, gap, passed: false, egg: withEgg ? { taken: false, t: Math.random() * 6 } : null });
+}
+
+function flap() {
+  wilson.vy = FLAP_V;
+  wilson.wing = 0;
+  Sfx.flap();
+  for (let i = 0; i < 3; i++) puffFeather(wilson.x - 12, wilson.y + 6, -60 - Math.random() * 60, -20 + Math.random() * 60);
+}
+
+function puffFeather(x, y, vx, vy) {
+  feathers.push({ x, y, vx, vy, a: Math.random() * Math.PI, va: (Math.random() - .5) * 8,
+                  life: 0.9 + Math.random() * 0.7, t: 0, s: 3 + Math.random() * 4 });
+}
+
+// ---------------------------------------------------------------- entrada
+function press() {
+  if (!uiEl.hidden) return;               // placar aberto na frente
+  Sfx.boot();
+  if (state === State.READY) { resetRun(); state = State.PLAY; flap(); }
+  else if (state === State.PLAY) flap();
+  else if (state === State.PAUSE) state = State.PLAY;
+  else if (state === State.DEAD && deadTimer > 0.65) { resetRun(); state = State.READY; }
+}
+
+window.addEventListener("keydown", (e) => {
+  if (!uiEl.hidden) return;               // o teclado é do formulário do placar
+  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "Enter" || e.code === "KeyW") {
+    e.preventDefault(); press();
+  } else if (e.code === "KeyP" || e.code === "Escape") {
+    if (state === State.PLAY) state = State.PAUSE;
+    else if (state === State.PAUSE) state = State.PLAY;
+  } else if (e.code === "KeyM") {
+    Sfx.on = !Sfx.on;
+  }
+});
+// Botões desenhados no canvas — no celular não existe teclado para P / M.
+const FS_OK = !!document.documentElement.requestFullscreen;
+const BTN_W = 46, BTN_H = 38, BTN_GAP = 8, BTN_Y = 12;
+const buttons = [
+  { id: "pause", act: () => { if (state === State.PLAY) state = State.PAUSE; else if (state === State.PAUSE) state = State.PLAY; } },
+  { id: "sound", act: () => { Sfx.on = !Sfx.on; Sfx.boot(); } },
+];
+if (FS_OK) buttons.push({ id: "full", act: toggleFullscreen });
+buttons.forEach((b, i) => {
+  b.x = W - 12 - (buttons.length - i) * BTN_W - (buttons.length - 1 - i) * BTN_GAP;
+  b.y = BTN_Y; b.w = BTN_W; b.h = BTN_H;
+});
+buttons.push({
+  id: "placar", x: 12, y: BTN_Y, w: BTN_W, h: BTN_H,
+  so: () => state === State.READY || state === State.DEAD,
+  act: () => abrePlacar(state === State.DEAD ? score : NaN),
+});
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  const req = document.documentElement.requestFullscreen({ navigationUI: "hide" });
+  // se o navegador (ou o iframe onde o jogo está) não permitir, some com o botão
+  if (req && req.catch) req.catch(() => {
+    const b = buttons.find(x => x.id === "full");
+    if (b) b.hidden = true;
+  });
+}
+
+function canvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: (e.clientX - rect.left) / rect.width * W, y: (e.clientY - rect.top) / rect.height * H };
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const { x, y } = canvasPoint(e);
+  const pad = 10;   // alvo de toque maior que o desenho
+  for (const b of buttons) {
+    if (b.hidden || (b.so && !b.so())) continue;
+    if (x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad) {
+      Sfx.boot(); b.act(); buzz(8); return;
+    }
+  }
+  press();
+}, { passive: false });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+window.addEventListener("blur", () => { if (state === State.PLAY) state = State.PAUSE; });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && state === State.PLAY) state = State.PAUSE;
+});
+
+// vibração curta (Android; iOS ignora silenciosamente)
+function buzz(pattern) { if (navigator.vibrate) try { navigator.vibrate(pattern); } catch (e) {} }
+
+// ---------------------------------------------------------------- lógica
+function update(dt) {
+  // nuvens andam sempre
+  for (const c of clouds) {
+    c.x -= c.v * dt * (state === State.PLAY ? 1.6 : 1);
+    if (c.x < -140) { c.x = W + 60; c.y = 30 + Math.random() * 290; c.s = .55 + Math.random() * .9; }
+  }
+  if (state !== State.PAUSE) {
+    const v = state === State.PLAY ? speed() : 40;
+    groundX = (groundX + v * dt) % 48;
+    bgX = (bgX + v * 0.16 * dt) % 400;
+  }
+
+  if (shake > 0) shake = Math.max(0, shake - dt * 3);
+  if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 2.4);
+
+  // partículas
+  for (const f of feathers) {
+    f.t += dt; f.vy += 320 * dt; f.vx *= 0.99;
+    f.x += f.vx * dt; f.y += f.vy * dt; f.a += f.va * dt;
+  }
+  feathers = feathers.filter(f => f.t < f.life && f.y < H + 30);
+  for (const s of sparks) { s.t += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 90 * dt; }
+  sparks = sparks.filter(s => s.t < s.life);
+
+  if (state === State.READY) {
+    wilson.y = H * 0.42 + Math.sin(performance.now() / 380) * 9;
+    wilson.angle = Math.sin(performance.now() / 380) * 0.10;
+    wilson.wing += dt * 6;
+    return;
+  }
+
+  if (state === State.PAUSE) return;
+
+  if (state === State.DEAD) {
+    deadTimer += dt;
+    if (wilson.alive === false) {
+      wilson.vy = Math.min(MAX_FALL, wilson.vy + GRAVITY * dt);
+      wilson.y += wilson.vy * dt;
+      wilson.angle = Math.min(1.6, wilson.angle + dt * 4.5);
+      if (wilson.y > FLOOR_Y - wilson.r) {
+        wilson.y = FLOOR_Y - wilson.r; wilson.vy = 0;
+      }
+    }
+    return;
+  }
+
+  // ------ jogando
+  elapsed += dt;
+  wilson.vy = Math.min(MAX_FALL, wilson.vy + GRAVITY * dt);
+  wilson.y += wilson.vy * dt;
+  wilson.wing += dt * (wilson.vy < 0 ? 22 : 8);
+
+  const target = Math.max(-0.48, Math.min(1.35, wilson.vy / 620));
+  wilson.angle += (target - wilson.angle) * Math.min(1, dt * 9);
+
+  // teto
+  if (wilson.y < wilson.r) { wilson.y = wilson.r; wilson.vy = Math.max(wilson.vy, 40); }
+
+  // canos
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) { addPipe(); spawnTimer = spawnGap(); }
+  const sp = speed();
+  for (const p of pipes) {
+    p.x -= sp * dt;
+    if (p.egg) p.egg.t += dt;
+    if (!p.passed && p.x + PIPE_W < wilson.x - wilson.r) {
+      p.passed = true; score++; Sfx.score(); buzz(10);
+    }
+  }
+  pipes = pipes.filter(p => p.x > -PIPE_W - 20);
+
+  // colisões
+  for (const p of pipes) {
+    if (p.egg && !p.egg.taken) {
+      const ex = p.x + PIPE_W / 2, ey = p.gapY;
+      if (Math.hypot(wilson.x - ex, wilson.y - ey) < wilson.r + 16) {
+        p.egg.taken = true; score += 2; Sfx.egg(); buzz([12, 30, 12]);
+        for (let i = 0; i < 14; i++) {
+          const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 140;
+          sparks.push({ x: ex, y: ey, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: .5 + Math.random() * .4 });
+        }
+      }
+    }
+    if (circleRect(wilson.x, wilson.y, wilson.r, p.x, 0, PIPE_W, p.gapY - p.gap / 2) ||
+        circleRect(wilson.x, wilson.y, wilson.r, p.x, p.gapY + p.gap / 2, PIPE_W, FLOOR_Y - (p.gapY + p.gap / 2))) {
+      die();
+      return;
+    }
+  }
+  // chão
+  if (wilson.y + wilson.r >= FLOOR_Y) { wilson.y = FLOOR_Y - wilson.r; die(); }
+}
+
+function circleRect(cx, cy, r, rx, ry, rw, rh) {
+  const nx = Math.max(rx, Math.min(cx, rx + rw));
+  const ny = Math.max(ry, Math.min(cy, ry + rh));
+  const dx = cx - nx, dy = cy - ny;
+  return dx * dx + dy * dy < r * r;
+}
+
+function die() {
+  if (state === State.DEAD) return;
+  state = State.DEAD; wilson.alive = false; deadTimer = 0;
+  wilson.vy = -180; shake = 1; flashAlpha = .65;
+  Sfx.hit(); setTimeout(() => Sfx.cluck(), 110); buzz(90);
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2, v = 70 + Math.random() * 190;
+    puffFeather(wilson.x, wilson.y, Math.cos(a) * v, Math.sin(a) * v - 60);
+  }
+  if (score > best) {
+    best = score;
+    try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
+  }
+  if (entraNoPlacar(score)) {
+    const pontos = score;
+    setTimeout(() => { if (state === State.DEAD && uiEl.hidden) abrePlacar(pontos); }, 950);
+  }
+}
+
+
+// ---------------------------------------------------------------- placar
+// A página guarda o placar dentro dela mesma: quando alguém entra no quadro,
+// republicamos a página com a lista nova (capacidade "artifact"). Onde essa
+// capacidade não existe — arquivo local, GitHub Pages — o placar continua
+// funcionando, só que guardado neste aparelho.
+const MAX_PLACAR = 10;
+const K_LOCAL = "wilson.placar", K_NOME = "wilson.nome";
+const K_PEND = "wilson.pendente", K_ABRIR = "wilson.abrir";
+
+const $ = (id) => document.getElementById(id);
+const uiEl = $("ui"), listaEl = $("lista"), vazioEl = $("vazio");
+const formEl = $("formNome"), nomeEl = $("nome"), enviarEl = $("enviar");
+const avisoEl = $("aviso"), subEl = $("uiSub"), fecharEl = $("fechar");
+
+function guardado(chave, padrao) {
+  try { return JSON.parse(localStorage.getItem(chave)) ?? padrao; } catch (e) { return padrao; }
+}
+function guardar(chave, valor) {
+  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) {}
+}
+
+let placarPub = [];                       // veio publicado dentro da página
+try { placarPub = (JSON.parse($("dados").textContent).entradas || []).filter(valida); } catch (e) {}
+let placarLoc = guardado(K_LOCAL, []).filter(valida);
+let euId = null;                          // marca a linha de quem acabou de entrar
+let podePublicar = null;                  // null = ainda não sabemos
+
+function valida(e) {
+  return e && typeof e.n === "string" && Number.isFinite(e.p) && e.p >= 0;
+}
+function chave(e) { return e.n + "|" + e.p + "|" + (e.d || ""); }
+function hoje() { return new Date().toISOString().slice(0, 10); }
+
+function ordena(lista) {
+  return lista.slice().sort((a, b) => b.p - a.p || String(a.d).localeCompare(String(b.d)));
+}
+// placar exibido: o que está publicado + o que ainda só existe aqui
+function unido() {
+  const vistos = new Set(placarPub.map(chave));
+  const juntos = placarPub.map(e => ({ ...e, local: false }));
+  for (const e of placarLoc) if (!vistos.has(chave(e))) juntos.push({ ...e, local: true });
+  return ordena(juntos).slice(0, MAX_PLACAR);
+}
+function entraNoPlacar(pontos) {
+  if (pontos <= 0) return false;
+  const lista = unido();
+  return lista.length < MAX_PLACAR || pontos > lista[lista.length - 1].p;
+}
+
+function limpaNome(txt) {
+  return String(txt).replace(/\s+/g, " ").trim().slice(0, 16);
+}
+
+function desenhaLista() {
+  const lista = unido();
+  listaEl.replaceChildren();
+  vazioEl.hidden = lista.length > 0;
+  lista.forEach((e, i) => {
+    const li = document.createElement("li");
+    if (e.id && e.id === euId) li.className = "eu";
+    const pos = document.createElement("span");
+    pos.className = "pos"; pos.textContent = (i + 1) + ".";
+    const nome = document.createElement("span");
+    nome.className = "nome"; nome.textContent = e.n;
+    if (e.local) {
+      const tag = document.createElement("span");
+      tag.className = "so-aqui"; tag.textContent = " só neste aparelho";
+      nome.appendChild(tag);
+    }
+    const pts = document.createElement("span");
+    pts.className = "pts"; pts.textContent = e.p;
+    li.append(pos, nome, pts);
+    listaEl.appendChild(li);
+  });
+}
+
+function abrePlacar(pontos) {
+  const podeEntrar = Number.isFinite(pontos) && entraNoPlacar(pontos);
+  desenhaLista();
+  formEl.hidden = !podeEntrar;
+  avisoEl.textContent = "";
+  if (podeEntrar) {
+    formEl.dataset.pontos = pontos;
+    nomeEl.value = guardado(K_NOME, "");
+    enviarEl.disabled = false;
+    enviarEl.textContent = "Entrar no placar com " + pontos + (pontos === 1 ? " ponto" : " pontos");
+    fecharEl.textContent = "Agora não";
+  } else {
+    fecharEl.textContent = "Voltar ao jogo";
+  }
+  uiEl.hidden = false;
+  // no celular deixa o jogador tocar no campo: teclado subindo sozinho tampa o placar
+  if (podeEntrar && !isTouch) setTimeout(() => nomeEl.focus({ preventScroll: true }), 60);
+}
+function fechaPlacar() { uiEl.hidden = true; }
+fecharEl.addEventListener("click", fechaPlacar);
+uiEl.addEventListener("pointerdown", (e) => { if (e.target === uiEl) fechaPlacar(); });
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && !uiEl.hidden) { e.preventDefault(); fechaPlacar(); }
+}, true);
+
+// ---- publicação
+let artefato = null, pArtefato = null;
+const temClaude = !!(window.claude && typeof window.claude.use === "function");
+if (temClaude) {
+  pArtefato = window.claude.use("artifact").catch(() => null);
+  pArtefato.then((a) => {
+    artefato = a;
+    if (!a) { podePublicar = false; atualizaSub(); }
+    else tentaPendente();
+  });
+} else {
+  podePublicar = false;
+}
+
+function atualizaSub() {
+  subEl.textContent = podePublicar === false
+    ? "guardado só neste aparelho"
+    : "as dez melhores voadoras";
+}
+atualizaSub();
+
+// A página republicada precisa ser um documento completo. Ela é montada com
+// os mesmos pedaços desta aqui — CSS, corpo e este próprio script — trocando
+// apenas a lista de pontuações.
+function paginaHTML(lista) {
+  const css = $("css").textContent;
+  const js = $("app").textContent;
+  const dados = JSON.stringify({ v: 1, entradas: lista }).replace(/</g, "\\u003c");
+  return '<!doctype html>\n<html lang="pt-BR">\n<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">\n' +
+    '<meta name="theme-color" content="#1d2b1f">\n' +
+    '<meta name="mobile-web-app-capable" content="yes">\n' +
+    '<meta name="apple-mobile-web-app-capable" content="yes">\n' +
+    '<meta name="apple-mobile-web-app-title" content="Wilson">\n' +
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n' +
+    '<title>Voa, Wilson!</title>\n' +
+    '<style id="css">' + css + '</style>\n' +
+    '</head>\n<body>\n<div id="jogo"></div>\n' +
+    '<script id="dados" type="application/json">' + dados + '<\/script>\n' +
+    '<script id="app">' + js + '<\/script>\n</body>\n</html>\n';
+}
+
+const RECADO = {
+  semSuporte: "Aqui o placar fica guardado só neste aparelho — quem abrir de outro celular vê o próprio.",
+  leitura: "Neste link você só pode ver o placar, então sua pontuação ficou guardada neste aparelho.",
+  cheio: "O placar está recebendo entradas rápido demais agora. A sua ficou guardada neste aparelho.",
+  falhou: "Não deu para atualizar o placar compartilhado. Sua pontuação ficou guardada neste aparelho.",
+};
+function recadoDe(codigo) {
+  if (["not_granted", "not_writer", "not_declared", "consent_required",
+       "capability_disabled", "capability_removed"].includes(codigo)) {
+    podePublicar = false; atualizaSub(); return RECADO.leitura;
+  }
+  if (codigo === "rate_limited") return RECADO.cheio;
+  return RECADO.falhou;
+}
+
+async function publica(lista) {
+  // sucesso recarrega esta view; o que precisa sobreviver vai na sessão antes
+  return artefato.publish(paginaHTML(lista));
+}
+
+formEl.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const nome = limpaNome(nomeEl.value) || "Anônima";
+  const pontos = parseInt(formEl.dataset.pontos, 10);
+  if (!Number.isFinite(pontos)) return;
+
+  const entrada = { n: nome, p: pontos, d: hoje(), id: Math.random().toString(36).slice(2, 8) };
+  guardar(K_NOME, nome);
+  placarLoc = ordena([...placarLoc, entrada]).slice(0, MAX_PLACAR);
+  guardar(K_LOCAL, placarLoc);
+  euId = entrada.id;
+  formEl.hidden = true;
+  desenhaLista();
+
+  enviarEl.disabled = true;
+  enviarEl.textContent = "Salvando…";
+  avisoEl.textContent = "";
+  if (pArtefato && !artefato) artefato = await pArtefato;   // pode ainda estar carregando
+  if (!artefato) { avisoEl.textContent = temClaude ? RECADO.leitura : RECADO.semSuporte; return; }
+  try { sessionStorage.setItem(K_PEND, JSON.stringify(entrada)); sessionStorage.setItem(K_ABRIR, "1"); } catch (e) {}
+  try {
+    const lista = ordena([...placarPub, entrada]).slice(0, MAX_PLACAR);
+    await publica(lista);
+    // normalmente a view recarrega sozinha na versão nova; se demorar,
+    // já mostra o resultado aqui
+    placarPub = lista;
+    try { sessionStorage.removeItem(K_PEND); } catch (e) {}
+    desenhaLista();
+    avisoEl.textContent = "Pronto! Sua pontuação entrou no placar de todo mundo.";
+  } catch (err) {
+    const codigo = (err && err.code) || "upstream_error";
+    if (codigo === "conflict") return;          // alguém publicou antes; a view já vai recarregar
+    try { sessionStorage.removeItem(K_PEND); } catch (e) {}
+    avisoEl.textContent = recadoDe(codigo);
+  }
+});
+
+// Se a entrada anterior esbarrou em outra publicação, tenta uma vez só depois
+// que a página recarregou na versão vencedora.
+function tentaPendente() {
+  let pend = null;
+  try {
+    pend = JSON.parse(sessionStorage.getItem(K_PEND) || "null");
+    sessionStorage.removeItem(K_PEND);          // uma tentativa por carregamento
+  } catch (e) {}
+  if (!pend || !valida(pend)) return;
+  euId = pend.id;
+  if (placarPub.some(e => chave(e) === chave(pend))) return;   // já entrou
+  const lista = ordena([...placarPub, pend]).slice(0, MAX_PLACAR);
+  if (!lista.some(e => chave(e) === chave(pend))) return;      // já não entra mais no top
+  setTimeout(() => publica(lista).catch(() => {}), 400 + Math.random() * 800);
+}
+
+try {
+  if (sessionStorage.getItem(K_ABRIR)) { sessionStorage.removeItem(K_ABRIR); setTimeout(() => abrePlacar(NaN), 250); }
+} catch (e) {}
+
+// ---------------------------------------------------------------- desenho
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, FLOOR_Y);
+  g.addColorStop(0, "#5fb6de");
+  g.addColorStop(0.55, "#9ad9ee");
+  g.addColorStop(1, "#ddf1e2");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, FLOOR_Y);
+
+  // sol
+  ctx.save();
+  ctx.globalAlpha = .85;
+  ctx.fillStyle = "#fff3bd";
+  ctx.beginPath(); ctx.arc(W - 92, 96, 40, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = .22;
+  ctx.beginPath(); ctx.arc(W - 92, 96, 62, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  for (const c of clouds) drawCloud(c.x, c.y, c.s);
+}
+
+function drawCloud(x, y, s) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = "rgba(255,255,255,.88)";
+  ctx.beginPath();
+  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.arc(26, 6, 17, 0, Math.PI * 2);
+  ctx.arc(-26, 7, 15, 0, Math.PI * 2);
+  ctx.arc(9, -14, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHills() {
+  // colinas distantes
+  ctx.fillStyle = "#8fc76f";
+  ctx.beginPath();
+  ctx.moveTo(0, FLOOR_Y);
+  for (let x = 0; x <= W; x += 12) {
+    const y = FLOOR_Y - 62 - Math.sin((x + groundX * .25) / 90) * 22 - Math.cos(x / 47) * 8;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, FLOOR_Y); ctx.closePath(); ctx.fill();
+
+  // fazenda ao fundo, com parallax lento
+  for (let i = -1; i <= Math.ceil(W / 400) + 1; i++) {
+    const ox = i * 400 - bgX;
+    drawFence(ox + 168, FLOOR_Y - 52);
+    drawBarn(ox + 78, FLOOR_Y - 56);
+    drawSilo(ox + 300, FLOOR_Y - 56);
+  }
+
+  ctx.fillStyle = "#6fb355";
+  ctx.beginPath();
+  ctx.moveTo(0, FLOOR_Y);
+  for (let x = 0; x <= W; x += 12) {
+    const y = FLOOR_Y - 30 - Math.sin((x + groundX * .5) / 70 + 2) * 14;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, FLOOR_Y); ctx.closePath(); ctx.fill();
+}
+
+function drawFence(x, baseY) {
+  ctx.save();
+  ctx.translate(x, baseY);
+  ctx.fillStyle = "#e2cba4";
+  for (let i = 0; i < 5; i++) ctx.fillRect(i * 15, -16, 5, 16);
+  ctx.fillRect(0, -12, 65, 4);
+  ctx.fillRect(0, -6, 65, 4);
+  ctx.restore();
+}
+
+function drawBarn(x, baseY) {
+  ctx.save();
+  ctx.translate(x, baseY);
+  ctx.fillStyle = "#b3453b";
+  ctx.fillRect(-34, -44, 68, 44);
+  ctx.fillStyle = "#8c322c";
+  ctx.beginPath();
+  ctx.moveTo(-40, -44); ctx.lineTo(0, -72); ctx.lineTo(40, -44); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#f3e2c4";
+  ctx.fillRect(-11, -26, 22, 26);
+  ctx.strokeStyle = "#8c322c"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(0, 0);
+  ctx.moveTo(-11, -14); ctx.lineTo(11, -14); ctx.stroke();
+  ctx.restore();
+}
+
+function drawSilo(x, baseY) {
+  ctx.save();
+  ctx.translate(x, baseY);
+  ctx.fillStyle = "#d9d2c2";
+  ctx.fillRect(-15, -58, 30, 58);
+  ctx.fillStyle = "#b9b1a0";
+  ctx.beginPath(); ctx.ellipse(0, -58, 15, 11, 0, Math.PI, 0); ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,.10)"; ctx.lineWidth = 2;
+  for (let i = -48; i < 0; i += 12) { ctx.beginPath(); ctx.moveTo(-15, i); ctx.lineTo(15, i); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawGround() {
+  // grama
+  ctx.fillStyle = "#68b04a";
+  ctx.fillRect(0, FLOOR_Y, W, 20);
+  ctx.fillStyle = "#57993d";
+  for (let x = -48; x < W + 48; x += 24) {
+    const gx = x - (groundX % 24);
+    ctx.beginPath();
+    ctx.moveTo(gx, FLOOR_Y + 20);
+    ctx.lineTo(gx + 8, FLOOR_Y + 3);
+    ctx.lineTo(gx + 16, FLOOR_Y + 20);
+    ctx.closePath(); ctx.fill();
+  }
+  // terra
+  const g = ctx.createLinearGradient(0, FLOOR_Y + 20, 0, H);
+  g.addColorStop(0, "#cf9f66");
+  g.addColorStop(1, "#a9793f");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, FLOOR_Y + 20, W, H - FLOOR_Y - 20);
+  ctx.fillStyle = "rgba(0,0,0,.08)";
+  for (let x = -48; x < W + 48; x += 48) {
+    ctx.fillRect(x - groundX, FLOOR_Y + 30, 24, H);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.14)";
+  ctx.fillRect(0, FLOOR_Y + 20, W, 3);
+}
+
+function drawPipe(p) {
+  const topH = p.gapY - p.gap / 2;
+  const botY = p.gapY + p.gap / 2;
+  postBody(p.x, 0, PIPE_W, topH, true);
+  postBody(p.x, botY, PIPE_W, FLOOR_Y - botY, false);
+  if (p.egg && !p.egg.taken) drawEgg(p.x + PIPE_W / 2, p.gapY + Math.sin(p.egg.t * 3) * 5, p.egg.t);
+}
+
+function postBody(x, y, w, h, isTop) {
+  if (h <= 0) return;
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, "#8a5a2c");
+  g.addColorStop(0.22, "#c9884a");
+  g.addColorStop(0.55, "#b0703a");
+  g.addColorStop(1, "#7c4f26");
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+
+  // tábuas
+  ctx.strokeStyle = "rgba(70,40,15,.28)"; ctx.lineWidth = 2;
+  for (let i = y + 22; i < y + h - 6; i += 30) {
+    ctx.beginPath(); ctx.moveTo(x + 4, i); ctx.lineTo(x + w - 4, i); ctx.stroke();
+  }
+  // topo/base (chapéu)
+  const capH = 24;
+  const capY = isTop ? y + h - capH : y;
+  const cg = ctx.createLinearGradient(x - 6, 0, x + w + 6, 0);
+  cg.addColorStop(0, "#7a4a22");
+  cg.addColorStop(0.25, "#d99a5c");
+  cg.addColorStop(0.6, "#b8763c");
+  cg.addColorStop(1, "#6f4420");
+  ctx.fillStyle = cg;
+  ctx.fillRect(x - 6, capY, w + 12, capH);
+  ctx.fillStyle = "rgba(255,255,255,.12)";
+  ctx.fillRect(x - 6, capY, w + 12, 4);
+  ctx.strokeStyle = "rgba(60,34,12,.45)"; ctx.lineWidth = 2;
+  ctx.strokeRect(x - 5, capY + 1, w + 10, capH - 2);
+}
+
+function drawEgg(x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.sin(t * 2) * .18);
+  const g = ctx.createRadialGradient(-4, -6, 2, 0, 0, 20);
+  g.addColorStop(0, "#fff6c9");
+  g.addColorStop(0.6, "#f4c542");
+  g.addColorStop(1, "#c8931c");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, 11, 15, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.7)";
+  ctx.beginPath(); ctx.ellipse(-4, -6, 3, 4.5, -.4, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = .35 + Math.sin(t * 5) * .2;
+  ctx.strokeStyle = "#fff3b0"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 20, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// ------------------------------------------------- a estrela: Wilson
+function drawWilson(x, y, angle, wingPhase, dead) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // sombra suave
+  ctx.fillStyle = "rgba(0,0,0,.10)";
+  ctx.beginPath(); ctx.ellipse(2, 4, 22, 17, 0, 0, Math.PI * 2); ctx.fill();
+
+  // pernas
+  ctx.strokeStyle = "#e28a1c"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  const legSwing = Math.sin(wingPhase * .6) * 3;
+  ctx.beginPath();
+  ctx.moveTo(-2, 12); ctx.lineTo(-4, 22 + legSwing); ctx.lineTo(-11, 25 + legSwing);
+  ctx.moveTo(6, 12); ctx.lineTo(5, 21 - legSwing); ctx.lineTo(-2, 24 - legSwing);
+  ctx.stroke();
+
+  // cauda
+  ctx.fillStyle = "#efe1c6";
+  ctx.beginPath();
+  ctx.moveTo(-16, -2);
+  ctx.quadraticCurveTo(-34, -14, -30, 2);
+  ctx.quadraticCurveTo(-30, 10, -14, 8);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#dcc9a5";
+  ctx.beginPath();
+  ctx.moveTo(-16, 2);
+  ctx.quadraticCurveTo(-30, 0, -27, 9);
+  ctx.quadraticCurveTo(-24, 13, -13, 9);
+  ctx.closePath(); ctx.fill();
+
+  // corpo
+  const bg = ctx.createLinearGradient(0, -18, 0, 18);
+  bg.addColorStop(0, "#ffffff");
+  bg.addColorStop(0.65, "#fdf4e0");
+  bg.addColorStop(1, "#e9d9ba");
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(0, 0, 21, 17, 0, 0, Math.PI * 2); ctx.fill();
+
+  // cabeça
+  ctx.fillStyle = "#fffdf6";
+  ctx.beginPath(); ctx.arc(13, -12, 12, 0, Math.PI * 2); ctx.fill();
+
+  // crista
+  ctx.fillStyle = "#e04338";
+  ctx.beginPath();
+  ctx.arc(9, -23, 4.5, 0, Math.PI * 2);
+  ctx.arc(15, -26, 5.2, 0, Math.PI * 2);
+  ctx.arc(21, -23, 4.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // bico
+  ctx.fillStyle = "#f7a723";
+  ctx.beginPath();
+  ctx.moveTo(23, -13); ctx.lineTo(35, -9.5); ctx.lineTo(23, -6);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#d98a11";
+  ctx.beginPath();
+  ctx.moveTo(23, -9.5); ctx.lineTo(35, -9.5); ctx.lineTo(23, -6);
+  ctx.closePath(); ctx.fill();
+
+  // barbela
+  ctx.fillStyle = "#e04338";
+  ctx.beginPath(); ctx.ellipse(22, -2, 3.6, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  // olho
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(17, -15, 4.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2b2118";
+  if (dead) {
+    ctx.strokeStyle = "#2b2118"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(14, -18); ctx.lineTo(20, -12);
+    ctx.moveTo(20, -18); ctx.lineTo(14, -12);
+    ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.arc(18.4, -15, 2.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    ctx.beginPath(); ctx.arc(17.4, -16.2, .9, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // asa (bate)
+  const flapA = Math.sin(wingPhase) * 0.85;
+  ctx.save();
+  ctx.translate(-2, -2);
+  ctx.rotate(flapA * 0.55 - 0.15);
+  const wg = ctx.createLinearGradient(0, -8, 0, 12);
+  wg.addColorStop(0, "#fffaf0");
+  wg.addColorStop(1, "#e3d0ab");
+  ctx.fillStyle = wg;
+  ctx.beginPath(); ctx.ellipse(-2, 2, 14, 9.5, -0.25, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(160,135,95,.55)"; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-12, 3); ctx.quadraticCurveTo(-2, 8, 9, 4);
+  ctx.moveTo(-11, 0); ctx.quadraticCurveTo(-2, 4, 8, 0);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawFeathers() {
+  for (const f of feathers) {
+    const a = Math.max(0, 1 - f.t / f.life);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(f.x, f.y); ctx.rotate(f.a);
+    ctx.fillStyle = "#fffaf0";
+    ctx.beginPath(); ctx.ellipse(0, 0, f.s, f.s * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  for (const s of sparks) {
+    const a = Math.max(0, 1 - s.t / s.life);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#ffe98a";
+    ctx.beginPath(); ctx.arc(s.x, s.y, 3 * a + 1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------- HUD
+function text(str, x, y, size, color, align = "center", weight = "bold", outline = 4) {
+  ctx.font = weight + " " + size + "px " + FONT;
+  ctx.textAlign = align;
+  ctx.textBaseline = "alphabetic";
+  if (outline) {
+    ctx.lineWidth = outline; ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(45,30,15,.55)";
+    ctx.strokeText(str, x, y);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+}
+
+function panel(x, y, w, h, r = 16) {
+  ctx.save();
+  ctx.fillStyle = "rgba(255,250,238,.95)";
+  ctx.strokeStyle = "rgba(120,80,40,.65)";
+  ctx.lineWidth = 3;
+  roundRect(x, y, w, h, r);
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function medalFor(s) {
+  if (s >= 50) return { nome: "Ovo de Diamante", c1: "#bfefff", c2: "#5fb9d8" };
+  if (s >= 30) return { nome: "Ovo de Ouro",     c1: "#ffe98a", c2: "#d4a017" };
+  if (s >= 15) return { nome: "Ovo de Prata",    c1: "#f0f0f0", c2: "#a8a8a8" };
+  if (s >= 5)  return { nome: "Ovo de Bronze",   c1: "#f0c08a", c2: "#a4682c" };
+  return null;
+}
+
+function drawButtons() {
+  for (const b of buttons) {
+    if (b.hidden || (b.so && !b.so())) continue;
+    ctx.save();
+    ctx.globalAlpha = .78;
+    ctx.fillStyle = "rgba(28,20,10,.30)";
+    roundRect(b.x, b.y, b.w, b.h, 10); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1.5; ctx.stroke();
+
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    ctx.fillStyle = "#fff8e8"; ctx.strokeStyle = "#fff8e8";
+    ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+    if (b.id === "pause") {
+      if (state === State.PAUSE) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 5, cy - 8); ctx.lineTo(cx + 8, cy); ctx.lineTo(cx - 5, cy + 8);
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillRect(cx - 7, cy - 8, 5, 16);
+        ctx.fillRect(cx + 2, cy - 8, 5, 16);
+      }
+    } else if (b.id === "sound") {
+      ctx.beginPath();
+      ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx, cy - 9);
+      ctx.lineTo(cx, cy + 9); ctx.lineTo(cx - 5, cy + 4); ctx.lineTo(cx - 9, cy + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      if (Sfx.on) {
+        ctx.arc(cx + 2, cy, 6, -0.9, 0.9);
+      } else {
+        ctx.moveTo(cx + 3, cy - 5); ctx.lineTo(cx + 11, cy + 5);
+        ctx.moveTo(cx + 11, cy - 5); ctx.lineTo(cx + 3, cy + 5);
+      }
+      ctx.stroke();
+    } else if (b.id === "placar") {
+      ctx.beginPath();                       // taça
+      ctx.moveTo(cx - 6, cy - 9);
+      ctx.lineTo(cx + 6, cy - 9);
+      ctx.lineTo(cx + 5, cy - 2);
+      ctx.quadraticCurveTo(cx, cy + 5, cx - 5, cy - 2);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();                       // alças
+      ctx.arc(cx - 7, cy - 6, 3.2, 0.6, 3.6);
+      ctx.moveTo(cx + 10, cy - 5);
+      ctx.arc(cx + 7, cy - 6, 3.2, -0.4, 2.5, true);
+      ctx.stroke();
+      ctx.fillRect(cx - 1.5, cy + 3, 3, 4);  // pé
+      ctx.fillRect(cx - 6, cy + 7, 12, 2.6); // base
+    } else {
+      const r = 8, k = 4;
+      const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+      ctx.beginPath();
+      for (const [sx, sy] of corners) {
+        ctx.moveTo(cx + sx * r, cy + sy * r - sy * k);
+        ctx.lineTo(cx + sx * r, cy + sy * r);
+        ctx.lineTo(cx + sx * r - sx * k, cy + sy * r);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  if (state === State.PLAY || state === State.PAUSE) {
+    text(String(score), W / 2, 92, 56, "#fffdf3", "center", "bold", 7);
+  }
+
+  if (state === State.READY) {
+    const ty = H * 0.21;
+    text("WILSON", W / 2, ty, 62, "#fffdf3", "center", "bold", 8);
+    text("a galinha voadora", W / 2, ty + 36, 22, "#ffe9b8", "center", "bold", 5);
+
+    const bob = Math.sin(performance.now() / 300) * 5;
+    const py = Math.min(H * 0.63, FLOOR_Y - 130);
+    panel(W / 2 - 140, py + bob, 280, 96, 18);
+    ctx.fillStyle = "#5a3d1e";
+    text(isTouch ? "TOQUE NA TELA" : "TOQUE / ESPAÇO", W / 2, py + 34 + bob, 24, "#5a3d1e", "center", "bold", 0);
+    text("para bater as asas", W / 2, py + 60 + bob, 18, "#8a6a44", "center", "normal", 0);
+    text("Recorde: " + best, W / 2, py + 84 + bob, 16, "#a8853f", "center", "bold", 0);
+  }
+
+  if (state === State.PAUSE) {
+    ctx.fillStyle = "rgba(0,0,0,.38)";
+    ctx.fillRect(0, 0, W, H);
+    text("PAUSA", W / 2, H / 2, 48, "#fffdf3", "center", "bold", 7);
+    text(isTouch ? "toque para continuar" : "P ou toque para continuar",
+         W / 2, H / 2 + 34, 18, "#ffe9b8", "center", "bold", 4);
+  }
+
+  if (state === State.DEAD) {
+    const t = Math.min(1, deadTimer / 0.35);
+    const y0 = H * 0.247 + (1 - t) * 40;
+    ctx.save();
+    ctx.globalAlpha = t;
+    text("CO-CO-RI-CÓ!", W / 2, y0 - 26, 34, "#fff0c2", "center", "bold", 7);
+    panel(W / 2 - 148, y0, 296, 226, 20);
+
+    text("PONTOS", W / 2, y0 + 40, 17, "#a8853f", "center", "bold", 0);
+    text(String(score), W / 2, y0 + 84, 48, "#5a3d1e", "center", "bold", 0);
+    text("RECORDE", W / 2, y0 + 118, 15, "#a8853f", "center", "bold", 0);
+    text(String(best), W / 2, y0 + 148, 26, "#5a3d1e", "center", "bold", 0);
+
+    const m = medalFor(score);
+    if (m) {
+      const cx = W / 2 - 104, cy = y0 + 104;
+      const g = ctx.createRadialGradient(cx - 5, cy - 6, 3, cx, cy, 26);
+      g.addColorStop(0, m.c1); g.addColorStop(1, m.c2);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 19, 24, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(90,61,30,.5)"; ctx.lineWidth = 2; ctx.stroke();
+      text(m.nome.replace("Ovo de ", ""), cx, cy + 46, 13, "#8a6a44", "center", "bold", 0);
+    }
+    if (score >= best && score > 0) {
+      text("NOVO RECORDE!", W / 2, y0 + 178, 17, "#e0762a", "center", "bold", 0);
+    }
+    if (deadTimer > 0.65) {
+      const pulse = 0.55 + Math.abs(Math.sin(performance.now() / 400)) * 0.45;
+      ctx.globalAlpha = t * pulse;
+      text("toque para jogar de novo", W / 2, y0 + 206, 17, "#8a6a44", "center", "bold", 0);
+    }
+    ctx.restore();
+  }
+
+  drawButtons();
+}
+
+// ---------------------------------------------------------------- loop
+function render() {
+  ctx.save();
+  if (shake > 0) {
+    ctx.translate((Math.random() - .5) * 10 * shake, (Math.random() - .5) * 10 * shake);
+  }
+  drawSky();
+  drawHills();
+  for (const p of pipes) drawPipe(p);
+  drawGround();
+  drawFeathers();
+  drawWilson(wilson.x, wilson.y, wilson.angle, wilson.wing, !wilson.alive);
+  ctx.restore();
+
+  if (flashAlpha > 0) {
+    ctx.fillStyle = "rgba(255,255,255," + flashAlpha * .55 + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
+  drawHUD();
+}
+
+let last = performance.now();
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;      // evita "teleporte" após aba inativa
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
