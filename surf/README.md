@@ -42,9 +42,16 @@ Isso dá um mar infinito, liso e — o que importa para a física — com
 aceleração na descida, o ângulo da telha e o momento da decolagem saem direto
 da fórmula, sem amostragem nem colisão contra polígonos.
 
-A Wilson decola quando a onda "foge" debaixo dos pés: se a posição dela em
-queda livre no próximo quadro ficar acima da água, ela deixa de estar na
-superfície. É a mesma conta que faz uma rampa lançar um skatista.
+A Wilson decola pela **curvatura** da onda: ela deixa a superfície quando a
+água encurva mais rápido do que a gravidade consegue segurar, ou seja quando
+`κ·v² > g` — a mesma conta que joga um carro para fora no alto de uma lomba.
+Segurando o dedo, o peso vira `g·MERGULHO`, e por isso a telha fica colada:
+**voa-se soltando na crista**.
+
+No ar a física é outra de propósito: a gravidade cai para `G_AR` e a crista dá
+um impulso que cresce com a velocidade (`IMP_BASE + v·IMP_VEL`). Sem esses
+dois ajustes o "voo" durava 0,2 s — tempo de pipoco, não de manobra. Com eles,
+um voo bom passa de 1 s, que é o necessário para fechar um giro.
 
 O entulho é encaixado no **vale seguinte** ao sorteio (`valeApos`), e não em
 qualquer ponto: assim o obstáculo cai sempre onde o jogador ou passa voando
@@ -55,7 +62,16 @@ de uma subida, onde não haveria o que fazer.
 
 ```js
 const G = 1500, MERGULHO = 2.5, ARRASTO = 0.26;   // gravidade, peso ao segurar, atrito
-const VX_MIN = 120, VX_MAX = 1020;                // limites de velocidade
+const G_AR = 950;                                 // gravidade no ar: é ela que dá o arco
+const SALTO = 2.2;                                // facilidade de descolar na crista
+const IMP_BASE = 150, IMP_VEL = 0.25;             // impulso da crista
 const A1 = 85, F1 = 0.0040;                       // tamanho e comprimento do marulho
 ondaV = Math.min(430, 170 + dist * 0.006);        // o quanto a enchente aperta
 ```
+
+Esses números foram calibrados fora do navegador: a física está portada num
+script de simulação que roda 30 s de jogo com um piloto ideal e mede
+decolagens, tempo no ar e duração do voo para cada combinação. O ajuste
+escolhido dá uma decolagem a cada ~2,5 s e voo médio de ~1 s — números que
+depois bateram com o jogo rodando de verdade (22% de tempo no ar medido no
+navegador contra 26% na simulação).
