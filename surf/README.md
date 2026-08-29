@@ -13,10 +13,10 @@ Um botão só — o dedo na tela, o clique ou a barra de espaço:
 - **Segure no ar**: ela dá giros (cada giro completo vale pontos), mas precisa
   cair alinhada com a onda. Torto demais é tombo: perde quase toda a
   velocidade e a enchente ganha terreno.
-- **O entulho boia no fundo dos vales.** Com velocidade você passa voando por
-  cima; devagar, bate — e aí é *lo siento, Wilson*.
-- **A enchente vem atrás.** A barra no canto mostra a folga; surfar mal deixa
-  ela alcançar.
+- **O entulho boia na descida.** Com velocidade você passa voando por cima;
+  devagar, bate — e bater custa quase toda a velocidade, não a partida.
+- **A enchente vem atrás e é ela que acaba com você.** A barra no canto mostra
+  a folga; cada batida deixa a água chegar mais perto.
 
 | Ação | Tecla / gesto |
 |---|---|
@@ -53,10 +53,16 @@ um impulso que cresce com a velocidade (`IMP_BASE + v·IMP_VEL`). Sem esses
 dois ajustes o "voo" durava 0,2 s — tempo de pipoco, não de manobra. Com eles,
 um voo bom passa de 1 s, que é o necessário para fechar um giro.
 
-O entulho é encaixado no **vale seguinte** ao sorteio (`valeApos`), e não em
-qualquer ponto: assim o obstáculo cai sempre onde o jogador ou passa voando
-(se manteve velocidade) ou bate (se surfou mal) — em vez de aparecer no meio
-de uma subida, onde não haveria o que fazer.
+O entulho é encaixado no **primeiro terço da descida** (`pontoDaDescida`), e
+não em qualquer ponto. Essa posição saiu de medição, não de palpite: rodando o
+jogo e histogramando onde a Wilson está no ar ao longo do ciclo da onda, ela
+passa **65% do tempo no ar entre 20% e 50% da descida** e só **19% no fundo do
+vale**. O entulho estava no vale — ou seja, exatamente onde ela sempre pousa,
+o que tornava a batida quase inevitável.
+
+Bater também não encerra mais a partida: custa 55% da velocidade e dá 0,9 s de
+imunidade (para não levar duas seguidas). Quem termina a corrida é a enchente,
+que é visível e tem medidor — assim a derrota nunca chega sem aviso.
 
 ## Ajustes rápidos
 

@@ -183,7 +183,7 @@ try { voosAntes = parseInt(localStorage.getItem(VOOU_KEY) || "0", 10) || 0; } ca
 const w = {                          // a estrela, em cima da telha
   x: 0, y: 0, vx: 0, vy: 0, rot: 0, naAgua: true,
   giro: 0, giros: 0, molho: 0,       // molho = tremida depois de um tombo feio
-  voos: 0, podeVoar: false, desdeQuePousou: 0,
+  voos: 0, podeVoar: false, desdeQuePousou: 0, imune: 0,
 };
 
 let camX = 0, dist = 0, pontos = 0, milhos = 0, segurando = false;
@@ -211,7 +211,7 @@ semear();
 function reinicia() {
   w.x = 300; w.y = alturaOnda(w.x); w.vx = 300; w.vy = 0; w.rot = 0;
   w.naAgua = true; w.giro = 0; w.giros = 0; w.molho = 0;
-  w.voos = voosAntes; w.podeVoar = false; w.desdeQuePousou = 1;
+  w.voos = voosAntes; w.podeVoar = false; w.desdeQuePousou = 1; w.imune = 0;
   camX = w.x - W * 0.34; dist = 0; pontos = 0; milhos = 0;
   obstaculos = []; milharal = []; respingos = []; penas = [];
   proxObst = w.x + 2300; proxMilho = w.x + 500;
@@ -289,7 +289,7 @@ function povoa() {
   const ate = camX + W * 2.2;
   while (proxObst < ate) {
     const tipo = Math.floor(Math.random() * 4);
-    obstaculos.push({ x: valeApos(proxObst), tipo, fase: Math.random() * 6 });
+    obstaculos.push({ x: pontoDaDescida(proxObst), tipo, fase: Math.random() * 6 });
     proxObst += 760 + Math.random() * 700 - Math.min(320, dist / 60);
   }
   while (proxMilho < ate) {
@@ -298,16 +298,26 @@ function povoa() {
     proxMilho += 320 + Math.random() * 460;
   }
 }
-// o entulho boia no fundo do vale: com velocidade você passa voando por cima,
-// devagar você bate — é essa a troca do jogo
-function valeApos(x) {
-  let ant = inclinacao(x);
-  for (let i = 1; i <= 150; i++) {
+// O entulho boia no primeiro terço da descida — medindo o jogo, é onde a
+// Wilson passa 65% do tempo no ar (no fundo do vale são só 19%, que era onde
+// ele estava antes: bater lá era quase inevitável).
+const FASE_ENTULHO = 0.35;
+function pontoDaDescida(x) {
+  let crista = null, ant = inclinacao(x);
+  for (let i = 1; i <= 200; i++) {                  // crista: a inclinação vira positiva
     const xx = x + i * 8, s2 = inclinacao(xx);
-    if (ant > 0 && s2 <= 0) return xx;
+    if (ant <= 0 && s2 > 0) { crista = xx; break; }
     ant = s2;
   }
-  return x + 400;
+  if (crista === null) crista = x;
+  let vale = crista + 400;
+  ant = inclinacao(crista);
+  for (let i = 1; i <= 200; i++) {                  // vale: volta a ficar negativa
+    const xx = crista + i * 8, s2 = inclinacao(xx);
+    if (ant > 0 && s2 <= 0) { vale = xx; break; }
+    ant = s2;
+  }
+  return crista + (vale - crista) * FASE_ENTULHO;
 }
 
 function limpa() {
@@ -410,11 +420,20 @@ function passo(dt) {
   if (folga > 1250) ondaX += (folga - 1250) * 0.8 * dt;
   if (folga < 26) { acabou("A enchente alcançou a Wilson"); return; }
 
-  // obstáculos
+  // obstáculos: bater custa a velocidade (e a enchente cobra por isso)
+  if (w.imune > 0) w.imune -= dt;
   for (const o of obstaculos) {
+    if (o.batido) continue;
     const oy = alturaOnda(o.x) + Math.sin(o.fase + dist * .004) * 3;
     const cx = Math.abs(w.x - o.x), cy = Math.abs(w.y - (oy - 15));
-    if (cx < 13 + R && cy < 15 + R) { acabou("A Wilson bateu no entulho"); return; }
+    if (cx < 13 + R && cy < 15 + R && w.imune <= 0) {
+      o.batido = true;
+      w.vx *= 0.45; w.molho = 0.6; w.imune = 0.9;
+      tremor = 0.7; Sfx.tombo(); buzz(50);
+      respingo(w.x, w.y, 24, 240);
+      for (let i = 0; i < 8; i++) pena(w.x, w.y - 12);
+      diz("PLOFT!");
+    }
   }
   // milho
   for (const m of milharal) {
@@ -994,11 +1013,12 @@ function interface2() {
 
     const bob = Math.sin(performance.now() / 320) * 5;
     const py = Math.min(H * 0.66, H - 190);
-    painel(W / 2 - 152, py + bob, 304, 118, 18);
+    painel(W / 2 - 152, py + bob, 304, 134, 18);
     texto(isTouch ? "SEGURE O DEDO NA TELA" : "SEGURE ESPAÇO", W / 2, py + 34 + bob, 19, "#5a3d1e", "center", "bold", 0);
     texto("para afundar na descida", W / 2, py + 58 + bob, 16, "#8a6a44", "center", "normal", 0);
     texto("solte na crista para decolar", W / 2, py + 78 + bob, 16, "#8a6a44", "center", "normal", 0);
-    texto("Recorde: " + recorde, W / 2, py + 102 + bob, 15, "#a8853f", "center", "bold", 0);
+    texto("bater no entulho não mata — mas a enchente alcança", W / 2, py + 98 + bob, 13, "#a8853f", "center", "normal", 0);
+    texto("Recorde: " + recorde, W / 2, py + 120 + bob, 15, "#a8853f", "center", "bold", 0);
   }
 
   if (estado === Estado.PAUSA) {
