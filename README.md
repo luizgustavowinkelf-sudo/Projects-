@@ -14,11 +14,14 @@ melhores pontuações.
 
 ## Publicação
 
-O site é publicado pelo GitHub Pages a cada push na `main`, pelo workflow
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml). Ele liga o Pages
-sozinho na primeira execução (`actions/configure-pages` com `enablement: true`),
-então não é preciso configurar nada em Settings.
+O site sai direto da `main` pelo GitHub Pages, sem workflow: em
+**Settings → Pages**, com *Source: Deploy from a branch*, branch `main` e
+pasta `/ (root)`. A partir daí o GitHub republica sozinho a cada push.
 
-Nesse link o placar fica guardado em cada aparelho, porque não há servidor
+Ligar o Pages na primeira vez é um passo manual: a API de criação do site
+exige permissão de administrador do repositório, que o token do Actions não
+tem (`Resource not accessible by integration`).
+
+Nesse endereço o placar fica guardado em cada aparelho, porque não há servidor
 para gravar as pontuações — a versão com placar compartilhado é a publicada
 como Artifact do Claude.
